@@ -209,15 +209,6 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
                 onChangeText={(text) => dispatch({ type: 'descriptionChanged', text })}
                 textAlignVertical="top"
               />
-              {phase !== 'idle' && (
-                <Pressable
-                  accessibilityRole="button"
-                  style={styles.secondary}
-                  onPress={stopDictation}
-                >
-                  <Text style={styles.secondaryText}>Wpisz odpowiedź</Text>
-                </Pressable>
-              )}
               {phase === 'idle' && !!state.description.trim() && (
                 <Pressable
                   accessibilityRole="button"
@@ -244,17 +235,6 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
                           ? 'Włączam mikrofon…'
                           : 'Opowiedz — włącz mikrofon'}
                 </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                style={styles.button}
-                onPress={() => {
-                  stopDictation();
-                  setError('');
-                  dispatch({ type: 'callSelected' });
-                }}
-              >
-                <Text style={styles.buttonText}>Zadzwoń</Text>
               </Pressable>
               <Pressable accessibilityRole="button" style={styles.secondary} onPress={back}>
                 <Text style={styles.secondaryText}>Wróć</Text>
