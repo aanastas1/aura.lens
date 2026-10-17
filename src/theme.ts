@@ -1,16 +1,16 @@
 // ProwadźMnie design tokens. Transit-signage look: navy boards, signal-yellow accents.
 // Every text/background pair below meets WCAG AAA (7:1) contrast.
 export const colors = {
-  navy: '#29263F',      // boards, bars, panels (jakdojade violet-navy)
-  navyDeep: '#1A1830',  // pressed/busy states, borders on yellow
-  yellow: '#FFD23F',    // the one button, destination sign, arrows
-  white: '#FFFFFF',     // text on navy
-  ink: '#1A1830',       // text on yellow / white
-  paper: '#FFFFFF',     // answer card background
-  green: '#17803D',     // distance / "you're close" chip (white text on it)
-  blue: '#1F6FC5',      // secondary info chip (white text on it)
-  red: '#C8102E',       // recording state (white text on it)
-  errorBg: '#FFE3E3',   // error card background (ink text)
+  navy: '#29263F', // boards, bars, panels (jakdojade violet-navy)
+  navyDeep: '#1A1830', // pressed/busy states, borders on yellow
+  yellow: '#FFD23F', // the one button, destination sign, arrows
+  white: '#FFFFFF', // text on navy
+  ink: '#1A1830', // text on yellow / white
+  paper: '#FFFFFF', // answer card background
+  green: '#17803D', // distance / "you're close" chip (white text on it)
+  blue: '#1F6FC5', // secondary info chip (white text on it)
+  red: '#C8102E', // recording state (white text on it)
+  errorBg: '#FFE3E3', // error card background (ink text)
   scrim: 'rgba(26, 24, 48, 0.85)', // translucent navy over the camera
 } as const;
 

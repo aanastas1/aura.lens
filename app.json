@@ -4,9 +4,7 @@
     "slug": "nearby-ar",
     "version": "0.1.0",
     "orientation": "portrait",
-    "platforms": [
-      "android"
-    ],
+    "platforms": ["android"],
     "android": {
       "package": "pl.warsaw42.nearbyar",
       "permissions": [
@@ -24,12 +22,7 @@
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
-    "plugins": [
-      "expo-camera",
-      "expo-location",
-      "expo-sensors",
-      "expo-speech-recognition"
-    ],
+    "plugins": ["expo-camera", "expo-location", "expo-sensors", "expo-speech-recognition"],
     "extra": {
       "eas": {
         "projectId": "a852dac0-02b1-483b-a989-5bd19a90bec9"

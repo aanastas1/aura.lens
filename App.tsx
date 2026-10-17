@@ -1,9 +1,18 @@
-import { useEffect, useState } from 'react';
-import { AppState, Linking, Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
-import { CameraSession } from './src/CameraSession';
-import { colors, radius, space, type } from './src/theme';
+import { useEffect, useState } from 'react';
+import {
+  AppState,
+  Linking,
+  Platform,
+  Pressable,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { CameraSession } from '@/src/CameraSession';
+import { colors, radius, space, type } from '@/src/theme';
 
 export default function App() {
   const [, requestCameraPermission] = useCameraPermissions();
@@ -17,22 +26,28 @@ export default function App() {
     setRequesting(true);
     setError('');
     try {
-      if (Platform.OS !== 'android') throw new Error('Ta aplikacja działa tylko na telefonach z Androidem.');
+      if (Platform.OS !== 'android')
+        throw new Error('Ta aplikacja działa tylko na telefonach z Androidem.');
       const camera = await requestCameraPermission();
       if (!camera.granted) throw new Error('Zezwól na aparat w ustawieniach telefonu.');
       const location = await Location.requestForegroundPermissionsAsync();
       if (!location.granted) throw new Error('Zezwól na lokalizację w ustawieniach telefonu.');
-      if (!await Location.hasServicesEnabledAsync()) throw new Error('Włącz lokalizację (GPS) w telefonie.');
+      if (!(await Location.hasServicesEnabledAsync()))
+        throw new Error('Włącz lokalizację (GPS) w telefonie.');
       setAllowed(true);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Coś poszło nie tak. Spróbuj jeszcze raz.');
+      setError(
+        reason instanceof Error ? reason.message : 'Coś poszło nie tak. Spróbuj jeszcze raz.',
+      );
     } finally {
       setRequesting(false);
     }
   };
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', next => setActive(next === 'active'));
+    const subscription = AppState.addEventListener('change', (next) =>
+      setActive(next === 'active'),
+    );
     return () => subscription.remove();
   }, []);
 
@@ -40,10 +55,15 @@ export default function App() {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={colors.navy} />
       {allowed && active ? (
-        <CameraSession key={session} restart={() => setSession(value => value + 1)} />
+        <CameraSession key={session} restart={() => setSession((value) => value + 1)} />
       ) : (
         <View style={styles.waiting}>
-          <View style={styles.plate} accessible accessibilityRole="header" accessibilityLabel="ProwadźMnie">
+          <View
+            style={styles.plate}
+            accessible
+            accessibilityRole="header"
+            accessibilityLabel="ProwadźMnie"
+          >
             <Text style={styles.wordmark}>ProwadźMnie</Text>
           </View>
           {error ? (
@@ -51,15 +71,36 @@ export default function App() {
               <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : (
-            <Text style={styles.text}>{allowed ? 'Wróć do aplikacji, aby kontynuować rozmowę i drogę.' : 'Pomogę Ci dojść na miejsce. Powiedz na przykład: „Zaprowadź mnie do apteki”.'}</Text>
+            <Text style={styles.text}>
+              {allowed
+                ? 'Wróć do aplikacji, aby kontynuować rozmowę i drogę.'
+                : 'Pomogę Ci dojść na miejsce. Powiedz na przykład: „Zaprowadź mnie do apteki”.'}
+            </Text>
           )}
           <View style={styles.actions}>
-            {!allowed && <Pressable accessibilityRole="button" accessibilityLabel={error ? 'Spróbuj ponownie' : 'Zaczynamy'} disabled={requesting} style={[styles.button, requesting && styles.busy]} onPress={() => void requestAccess()}>
-              <Text style={styles.buttonText}>{requesting ? 'Chwileczkę…' : error ? 'Spróbuj ponownie' : 'Zaczynamy'}</Text>
-            </Pressable>}
-            {!!error && <Pressable accessibilityRole="button" accessibilityLabel="Otwórz ustawienia" style={styles.settings} onPress={() => void Linking.openSettings()}>
-              <Text style={styles.settingsText}>Otwórz ustawienia</Text>
-            </Pressable>}
+            {!allowed && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={error ? 'Spróbuj ponownie' : 'Zaczynamy'}
+                disabled={requesting}
+                style={[styles.button, requesting && styles.busy]}
+                onPress={() => void requestAccess()}
+              >
+                <Text style={styles.buttonText}>
+                  {requesting ? 'Chwileczkę…' : error ? 'Spróbuj ponownie' : 'Zaczynamy'}
+                </Text>
+              </Pressable>
+            )}
+            {!!error && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Otwórz ustawienia"
+                style={styles.settings}
+                onPress={() => void Linking.openSettings()}
+              >
+                <Text style={styles.settingsText}>Otwórz ustawienia</Text>
+              </Pressable>
+            )}
           </View>
         </View>
       )}
@@ -70,15 +111,37 @@ export default function App() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.navy },
   waiting: { flex: 1, justifyContent: 'center', padding: space.l, gap: space.l },
-  plate: { alignSelf: 'stretch', alignItems: 'center', backgroundColor: colors.yellow, borderColor: colors.navyDeep, borderWidth: 6, borderRadius: radius.sign, paddingVertical: space.l, paddingHorizontal: space.m },
+  plate: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    backgroundColor: colors.yellow,
+    borderColor: colors.navyDeep,
+    borderWidth: 6,
+    borderRadius: radius.sign,
+    paddingVertical: space.l,
+    paddingHorizontal: space.m,
+  },
   wordmark: { color: colors.ink, fontSize: 40, lineHeight: 48, fontWeight: '900' },
   text: { color: colors.white, ...type.title },
   errorCard: { backgroundColor: colors.errorBg, borderRadius: radius.card, padding: space.l },
   errorText: { color: colors.ink, ...type.title },
   actions: { gap: space.m },
-  button: { backgroundColor: colors.yellow, minHeight: 88, borderRadius: radius.button, alignItems: 'center', justifyContent: 'center' },
+  button: {
+    backgroundColor: colors.yellow,
+    minHeight: 88,
+    borderRadius: radius.button,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   busy: { backgroundColor: colors.white },
   buttonText: { color: colors.ink, fontSize: 32, lineHeight: 38, fontWeight: '900' },
-  settings: { borderColor: colors.white, borderWidth: 4, minHeight: 72, borderRadius: radius.button, alignItems: 'center', justifyContent: 'center' },
+  settings: {
+    borderColor: colors.white,
+    borderWidth: 4,
+    minHeight: 72,
+    borderRadius: radius.button,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   settingsText: { color: colors.white, ...type.title },
 });

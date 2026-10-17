@@ -1,11 +1,14 @@
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { MODEL_ID, answerWithPhoto, createAssistantConversation } from './assistant';
+import { describe, it } from 'node:test';
+import { answerWithPhoto, createAssistantConversation, MODEL_ID } from '@/src/assistant';
 
 const photo = 'data:image/jpeg;base64,/9j/2Q==';
 const sse = (value: unknown) => `data: ${JSON.stringify(value)}\n\n`;
 const chunk = (delta: object, finish_reason: string | null = null) => ({
-  id: 'assistant-test', object: 'chat.completion.chunk', created: 1, model: MODEL_ID,
+  id: 'assistant-test',
+  object: 'chat.completion.chunk',
+  created: 1,
+  model: MODEL_ID,
   choices: [{ index: 0, delta, finish_reason }],
 });
 
@@ -16,34 +19,52 @@ describe('streaming assistant with a photo', () => {
     const fetcher: typeof fetch = async (_url, init) => {
       request = JSON.parse(String(init?.body));
       const encoder = new TextEncoder();
-      return new Response(new ReadableStream({
-        async start(controller) {
-          controller.enqueue(encoder.encode(sse(chunk({ role: 'assistant', content: 'Widzę ' }))));
-          await new Promise(resolve => setTimeout(resolve, 30));
-          assert.deepEqual(updates, ['Widzę ']);
-          controller.enqueue(encoder.encode(sse(chunk({ content: 'krzesło.' }))));
-          controller.enqueue(encoder.encode(sse(chunk({}, 'stop')) + 'data: [DONE]\n\n'));
-          controller.close();
-        },
-      }), { headers: { 'content-type': 'text/event-stream' } });
+      return new Response(
+        new ReadableStream({
+          async start(controller) {
+            controller.enqueue(
+              encoder.encode(sse(chunk({ role: 'assistant', content: 'Widzę ' }))),
+            );
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            assert.deepEqual(updates, ['Widzę ']);
+            controller.enqueue(encoder.encode(sse(chunk({ content: 'krzesło.' }))));
+            controller.enqueue(encoder.encode(sse(chunk({}, 'stop')) + 'data: [DONE]\n\n'));
+            controller.close();
+          },
+        }),
+        { headers: { 'content-type': 'text/event-stream' } },
+      );
     };
-    const result = await answerWithPhoto('Co widzisz na zdjęciu?', photo, 'test-key', new AbortController().signal,
-      value => updates.push(value), fetcher);
+    const result = await answerWithPhoto(
+      'Co widzisz na zdjęciu?',
+      photo,
+      'test-key',
+      new AbortController().signal,
+      (value) => updates.push(value),
+      fetcher,
+    );
     assert.equal(result, 'Widzę krzesło.');
     assert.deepEqual(updates, ['Widzę ', 'Widzę krzesło.']);
     assert.equal(request.model, MODEL_ID);
     assert.equal(request.stream, true);
     assert.equal(request.provider.require_parameters, true);
     assert.equal(request.reasoning.effort, 'minimal');
-    const userMessage = request.messages.find((message: { role: string }) => message.role === 'user');
+    const userMessage = request.messages.find(
+      (message: { role: string }) => message.role === 'user',
+    );
     assert.deepEqual(userMessage.content, [
       { type: 'image_url', image_url: { url: photo } },
       { type: 'text', text: 'Co widzisz na zdjęciu?' },
     ]);
-    const systemMessages = request.messages.filter((message: { role: string }) => message.role === 'system');
+    const systemMessages = request.messages.filter(
+      (message: { role: string }) => message.role === 'system',
+    );
     assert.equal(systemMessages.length, 1);
     const instructions = systemMessages[0].content;
-    const systemText = typeof instructions === 'string' ? instructions : instructions.map((part: { text: string }) => part.text).join('');
+    const systemText =
+      typeof instructions === 'string'
+        ? instructions
+        : instructions.map((part: { text: string }) => part.text).join('');
     assert.match(systemText, /Odpowiedz na pytanie/);
     assert.match(systemText, /prost/);
     assert.match(systemText, /ProwadźMnie/);
@@ -58,48 +79,78 @@ describe('streaming assistant with a photo', () => {
       '111-111-111',
       'ul. Racławicka 17, m. 14, 02-601 Warszawa',
     ]) {
-      assert.equal(systemText.split(fact).length - 1, 1, `Profile fact appears exactly once: ${fact}`);
+      assert.equal(
+        systemText.split(fact).length - 1,
+        1,
+        `Profile fact appears exactly once: ${fact}`,
+      );
       assert.ok(!JSON.stringify(userMessage.content).includes(fact));
     }
   });
 
   it('reports provider failures instead of speaking partial output', async () => {
-    const fetcher: typeof fetch = async () => new Response('{"error":{"message":"Invalid API key"}}', {
-      status: 401, headers: { 'content-type': 'application/json' },
-    });
-    await assert.rejects(answerWithPhoto('Test', photo, 'invalid', new AbortController().signal, () => {}, fetcher), /OpenRouter/);
+    const fetcher: typeof fetch = async () =>
+      new Response('{"error":{"message":"Invalid API key"}}', {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      });
+    await assert.rejects(
+      answerWithPhoto('Test', photo, 'invalid', new AbortController().signal, () => {}, fetcher),
+      /OpenRouter/,
+    );
   });
 
   it('rejects a missing key before making a request', async () => {
     let called = false;
-    const fetcher: typeof fetch = async () => { called = true; return new Response(); };
-    await assert.rejects(answerWithPhoto('Test', photo, '', new AbortController().signal, () => {}, fetcher), /EXPO_PUBLIC_OPENROUTER_API_KEY/);
+    const fetcher: typeof fetch = async () => {
+      called = true;
+      return new Response();
+    };
+    await assert.rejects(
+      answerWithPhoto('Test', photo, '', new AbortController().signal, () => {}, fetcher),
+      /EXPO_PUBLIC_OPENROUTER_API_KEY/,
+    );
     assert.equal(called, false);
   });
 
   it('does not send a question without a captured photo', async () => {
     let called = false;
-    const fetcher: typeof fetch = async () => { called = true; return new Response(); };
-    await assert.rejects(answerWithPhoto('Test', '', 'test-key', new AbortController().signal, () => {}, fetcher), /Brak zdjęcia/);
+    const fetcher: typeof fetch = async () => {
+      called = true;
+      return new Response();
+    };
+    await assert.rejects(
+      answerWithPhoto('Test', '', 'test-key', new AbortController().signal, () => {}, fetcher),
+      /Brak zdjęcia/,
+    );
     assert.equal(called, false);
   });
 
   it('does not accept truncated answers', async () => {
-    const fetcher: typeof fetch = async () => new Response(
-      sse(chunk({ content: 'Partial' })) + sse(chunk({}, 'length')) + 'data: [DONE]\n\n',
-      { headers: { 'content-type': 'text/event-stream' } },
+    const fetcher: typeof fetch = async () =>
+      new Response(
+        sse(chunk({ content: 'Partial' })) + sse(chunk({}, 'length')) + 'data: [DONE]\n\n',
+        { headers: { 'content-type': 'text/event-stream' } },
+      );
+    await assert.rejects(
+      answerWithPhoto('Test', photo, 'test-key', new AbortController().signal, () => {}, fetcher),
+      /pełnej odpowiedzi/,
     );
-    await assert.rejects(answerWithPhoto('Test', photo, 'test-key', new AbortController().signal, () => {}, fetcher), /pełnej odpowiedzi/);
   });
 });
 
-const completed = (text: string, reason = 'stop') => new Response(
-  sse(chunk({ content: text })) + sse(chunk({}, reason)) + 'data: [DONE]\n\n',
-  { headers: { 'content-type': 'text/event-stream' } },
-);
+const completed = (text: string, reason = 'stop') =>
+  new Response(sse(chunk({ content: text })) + sse(chunk({}, reason)) + 'data: [DONE]\n\n', {
+    headers: { 'content-type': 'text/event-stream' },
+  });
 
-const ask = (conversation: ReturnType<typeof createAssistantConversation>, text: string, fetcher: typeof fetch, image = photo, signal = new AbortController().signal) =>
-  conversation.answerWithPhoto(text, image, 'test-key', signal, () => {}, fetcher);
+const ask = (
+  conversation: ReturnType<typeof createAssistantConversation>,
+  text: string,
+  fetcher: typeof fetch,
+  image = photo,
+  signal = new AbortController().signal,
+) => conversation.answerWithPhoto(text, image, 'test-key', signal, () => {}, fetcher);
 
 describe('continuous conversation', () => {
   it('remembers text across questions but sends only the current photo and one system message', async () => {
@@ -159,18 +210,24 @@ describe('continuous conversation', () => {
     assert.deepEqual(summaries[1].olderTurns, [{ question: questions[1], answer: 'Odpowiedź.' }]);
     const lastMessages = answers.at(-1).messages;
     assert.ok(JSON.stringify(lastMessages).includes('Streszczenie numer 2.'));
-    for (const question of questions.slice(2)) assert.ok(JSON.stringify(lastMessages).includes(question));
+    for (const question of questions.slice(2))
+      assert.ok(JSON.stringify(lastMessages).includes(question));
     assert.ok(!JSON.stringify(lastMessages).includes(questions[0]!));
     assert.equal(lastMessages.filter((message: any) => message.role === 'assistant').length, 6);
-    assert.equal(lastMessages.flatMap((message: any) => Array.isArray(message.content) ? message.content : [])
-      .filter((part: any) => part.type === 'image_url').length, 1);
+    assert.equal(
+      lastMessages
+        .flatMap((message: any) => (Array.isArray(message.content) ? message.content : []))
+        .filter((part: any) => part.type === 'image_url').length,
+      1,
+    );
     assert.equal(JSON.stringify(lastMessages).split('ma na imię Jadwiga').length - 1, 1);
   });
 
   it('preserves history when compression fails and retries without storing the failed question', async () => {
     const conversation = createAssistantConversation();
     const fetcher: typeof fetch = async () => completed('Dobrze.');
-    for (let i = 0; i < 7; i++) await ask(conversation, `Pytanie ${i}: ${'a'.repeat(3500)}`, fetcher);
+    for (let i = 0; i < 7; i++)
+      await ask(conversation, `Pytanie ${i}: ${'a'.repeat(3500)}`, fetcher);
     const failure: typeof fetch = async () => completed('Niepełne streszczenie', 'length');
     await assert.rejects(ask(conversation, 'Nieudana próba', failure), /pełnej odpowiedzi/);
     let compressionInput: any;
@@ -193,13 +250,18 @@ describe('continuous conversation', () => {
   it('does not add truncated or cancelled turns to history', async () => {
     const conversation = createAssistantConversation();
     await ask(conversation, 'Dobre pytanie', async () => completed('Dobra odpowiedź.'));
-    await assert.rejects(ask(conversation, 'Urwane pytanie', async () => completed('Urwana', 'length')), /pełnej odpowiedzi/);
+    await assert.rejects(
+      ask(conversation, 'Urwane pytanie', async () => completed('Urwana', 'length')),
+      /pełnej odpowiedzi/,
+    );
     const controller = new AbortController();
     const cancelled: typeof fetch = async () => {
       controller.abort();
       return completed('Przerwana odpowiedź.');
     };
-    await assert.rejects(ask(conversation, 'Anulowane pytanie', cancelled, photo, controller.signal));
+    await assert.rejects(
+      ask(conversation, 'Anulowane pytanie', cancelled, photo, controller.signal),
+    );
     let request: any;
     await ask(conversation, 'Dalsze pytanie', async (_url, init) => {
       request = JSON.parse(String(init?.body));
@@ -215,8 +277,16 @@ describe('continuous conversation', () => {
 describe('invitations in conversation memory', () => {
   it('remembers notifications received before the first question and during a streamed answer', async () => {
     const conversation = createAssistantConversation();
-    const danka = { sender: 'Danka' as const, text: 'Jadwigo, zapraszam na ciasto w naszym bloku.', createdAt: 100 };
-    const basia = { sender: 'Basia' as const, text: 'Jadwigo, czekam w parku na Starym Mokotowie.', createdAt: 200 };
+    const danka = {
+      sender: 'Danka' as const,
+      text: 'Jadwigo, zapraszam na ciasto w naszym bloku.',
+      createdAt: 100,
+    };
+    const basia = {
+      sender: 'Basia' as const,
+      text: 'Jadwigo, czekam w parku na Starym Mokotowie.',
+      createdAt: 200,
+    };
     conversation.rememberInvitation(danka);
     let firstRequest: any;
     await ask(conversation, 'Kto mnie zaprasza?', async (_url, init) => {
@@ -235,7 +305,10 @@ describe('invitations in conversation memory', () => {
     assert.equal(messages.split(danka.text).length - 1, 1);
     assert.equal(messages.split(basia.text).length - 1, 1);
     assert.ok(messages.includes('nie wypowiedź Jadwigi'));
-    assert.equal(nextRequest.messages.filter((message: any) => message.role === 'system').length, 1);
+    assert.equal(
+      nextRequest.messages.filter((message: any) => message.role === 'system').length,
+      1,
+    );
   });
 
   it('includes old invitations in compression input and keeps new events received during compression', async () => {
@@ -243,7 +316,10 @@ describe('invitations in conversation memory', () => {
     const danka = { sender: 'Danka' as const, text: 'Zapraszam na ciasto.', createdAt: 100 };
     const basia = { sender: 'Basia' as const, text: 'Zapraszam do parku.', createdAt: 200 };
     conversation.rememberInvitation(danka);
-    for (let i = 0; i < 7; i++) await ask(conversation, `Pytanie ${i}: ${'a'.repeat(3500)}`, async () => completed('Dobrze.'));
+    for (let i = 0; i < 7; i++)
+      await ask(conversation, `Pytanie ${i}: ${'a'.repeat(3500)}`, async () =>
+        completed('Dobrze.'),
+      );
     let compressionInput: any;
     await ask(conversation, 'Kto zaprasza?', async (_url, init) => {
       const request = JSON.parse(String(init?.body));
@@ -271,18 +347,41 @@ describe('navigation tool in the assistant conversation', () => {
     const end = { latitude: 52.201, longitude: 21 };
     let routeRequests = 0;
     const conversation = createAssistantConversation({
-      async search() { return [{ id: 'pharmacy', name: 'Apteka', address: 'Testowa 1', location: end, openNow: true }]; },
+      async search() {
+        return [
+          { id: 'pharmacy', name: 'Apteka', address: 'Testowa 1', location: end, openNow: true },
+        ];
+      },
       async route() {
         routeRequests++;
-        return { distance: 111, durationSeconds: 120, warnings: [], steps: [{ instruction: 'Idź prosto ulicą Testową.', distance: 111, path: [origin, end] }] };
+        return {
+          distance: 111,
+          durationSeconds: 120,
+          warnings: [],
+          steps: [{ instruction: 'Idź prosto ulicą Testową.', distance: 111, path: [origin, end] }],
+        };
       },
     });
     conversation.navigation.updateLocation({ ...origin, accuracy: 5, timestamp: Date.now() });
     let calls = 0;
-    const toolCall = (action: object) => new Response(
-      sse(chunk({ tool_calls: [{ index: 0, id: `call-${calls}`, type: 'function', function: { name: 'navigation', arguments: JSON.stringify(action) } }] }))
-      + sse(chunk({}, 'tool_calls')) + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } },
-    );
+    const toolCall = (action: object) =>
+      new Response(
+        sse(
+          chunk({
+            tool_calls: [
+              {
+                index: 0,
+                id: `call-${calls}`,
+                type: 'function',
+                function: { name: 'navigation', arguments: JSON.stringify(action) },
+              },
+            ],
+          }),
+        ) +
+          sse(chunk({}, 'tool_calls')) +
+          'data: [DONE]\n\n',
+        { headers: { 'content-type': 'text/event-stream' } },
+      );
     const fetcher: typeof fetch = async (_url, init) => {
       const request = JSON.parse(String(init?.body));
       calls++;
@@ -300,7 +399,8 @@ describe('navigation tool in the assistant conversation', () => {
     assert.match(response, /Co dalej/);
     assert.equal(routeRequests, 1);
     // Force history compaction; the structured route must survive independently of its summary.
-    for (let i = 0; i < 7; i++) await ask(conversation, `Temat ${i}: ${'a'.repeat(3500)}`, async () => completed('Dobrze.'));
+    for (let i = 0; i < 7; i++)
+      await ask(conversation, `Temat ${i}: ${'a'.repeat(3500)}`, async () => completed('Dobrze.'));
     let last: any;
     await ask(conversation, 'Wróćmy do apteki', async (_url, init) => {
       last = JSON.parse(String(init?.body));
@@ -315,12 +415,14 @@ describe('navigation tool in the assistant conversation', () => {
 
 describe('Google Maps isolation from everyday conversation', () => {
   it('never calls Google Maps for ordinary conversation or history compression', async () => {
-    const { googleMapsProvider } = await import('./googleMaps');
+    const { googleMapsProvider } = await import('@/src/googleMaps');
     let mapsCalls = 0;
-    const conversation = createAssistantConversation(googleMapsProvider('private-map-key', async () => {
-      mapsCalls++;
-      throw new Error('Google Maps must not be used for conversation');
-    }));
+    const conversation = createAssistantConversation(
+      googleMapsProvider('private-map-key', async () => {
+        mapsCalls++;
+        throw new Error('Google Maps must not be used for conversation');
+      }),
+    );
     let routerCalls = 0;
     const router: typeof fetch = async (url, init) => {
       routerCalls++;
@@ -328,35 +430,199 @@ describe('Google Maps isolation from everyday conversation', () => {
       assert.ok(!JSON.stringify(init).includes('private-map-key'));
       return completed('Dobrze, Jadwigo.');
     };
-    for (let i = 0; i < 8; i++) await ask(conversation, `Pytanie o codzienne sprawy ${i}: ${'a'.repeat(3500)}`, router);
+    for (let i = 0; i < 8; i++)
+      await ask(conversation, `Pytanie o codzienne sprawy ${i}: ${'a'.repeat(3500)}`, router);
     assert.ok(routerCalls > 8, 'compression also goes through OpenRouter');
     assert.equal(mapsCalls, 0);
   });
 
   it('returns a map quota error to OpenRouter without moving the conversation away from OpenRouter', async () => {
-    const { googleMapsProvider } = await import('./googleMaps');
+    const { googleMapsProvider } = await import('@/src/googleMaps');
     let mapsCalls = 0;
-    const conversation = createAssistantConversation(googleMapsProvider('private-map-key', async () => {
-      mapsCalls++;
-      return new Response('private-map-key', { status: 429 });
-    }));
-    conversation.navigation.updateLocation({ latitude: 52.2, longitude: 21, timestamp: Date.now(), accuracy: 5 });
+    const conversation = createAssistantConversation(
+      googleMapsProvider('private-map-key', async () => {
+        mapsCalls++;
+        return new Response('private-map-key', { status: 429 });
+      }),
+    );
+    conversation.navigation.updateLocation({
+      latitude: 52.2,
+      longitude: 21,
+      timestamp: Date.now(),
+      accuracy: 5,
+    });
     let routerCalls = 0;
     const router: typeof fetch = async (url, init) => {
       assert.ok(String(url).includes('openrouter.ai'));
       const request = JSON.parse(String(init?.body));
       assert.ok(!JSON.stringify(request).includes('private-map-key'));
-      if (++routerCalls === 1) return new Response(
-        sse(chunk({ tool_calls: [{ index: 0, id: 'maps-search', type: 'function', function: { name: 'navigation', arguments: JSON.stringify({ action: 'search', query: 'apteka', openNow: true }) } }] }))
-        + sse(chunk({}, 'tool_calls')) + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } },
-      );
+      if (++routerCalls === 1)
+        return new Response(
+          sse(
+            chunk({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'maps-search',
+                  type: 'function',
+                  function: {
+                    name: 'navigation',
+                    arguments: JSON.stringify({ action: 'search', query: 'apteka', openNow: true }),
+                  },
+                },
+              ],
+            }),
+          ) +
+            sse(chunk({}, 'tool_calls')) +
+            'data: [DONE]\n\n',
+          { headers: { 'content-type': 'text/event-stream' } },
+        );
       assert.ok(JSON.stringify(request.messages).includes('429'));
       return completed('Mapy są chwilowo niedostępne. Nadal możemy porozmawiać.');
     };
-    assert.match(await ask(conversation, 'Znajdź drogę do apteki', router), /Nadal możemy porozmawiać/);
+    assert.match(
+      await ask(conversation, 'Znajdź drogę do apteki', router),
+      /Nadal możemy porozmawiać/,
+    );
     assert.equal(mapsCalls, 1);
     assert.equal(routerCalls, 2);
     await ask(conversation, 'Jak ma na imię moja koleżanka?', async () => completed('Basia.'));
     assert.equal(mapsCalls, 1);
+  });
+});
+
+describe('Warsaw events tool in the assistant conversation', () => {
+  it('calls the events API only on tool use, chooses fresh GPS or labelled home fallback, and keeps the key out of model requests', async () => {
+    const { createWarsawEvents } = await import('@/src/events');
+    for (const useGps of [false, true]) {
+      let cityRequests = 0;
+      const events = createWarsawEvents('private-city-key', async (_url, init) => {
+        cityRequests++;
+        assert.equal(new Headers(init?.headers).get('Authorization'), 'private-city-key');
+        assert.equal(init?.body, undefined, 'shared feed request does not send user coordinates');
+        return new Response(
+          JSON.stringify([
+            {
+              title: 'Koncert sąsiedzki',
+              url: 'https://um.warszawa.pl/-/koncert-sasiedzki',
+              language: 'pl_PL',
+              occurrence: [
+                {
+                  from: new Date(Date.now() + 3600000).toISOString(),
+                  to: new Date(Date.now() + 7200000).toISOString(),
+                  daily: false,
+                },
+              ],
+              address: [{ name: 'Dom kultury', street: 'Testowa 1' }],
+              map: { features: [{ geometry: { type: 'Point', coordinates: [21.02, 52.2] } }] },
+            },
+          ]),
+          { headers: { 'content-type': 'application/json' } },
+        );
+      });
+      const conversation = createAssistantConversation(undefined, events);
+      await ask(conversation, 'Dzień dobry', async (_url, init) => {
+        assert.ok(!JSON.stringify(init).includes('private-city-key'));
+        return completed('Dzień dobry, Jadwigo.');
+      });
+      assert.equal(cityRequests, 0, 'ordinary conversation must not fetch events');
+      if (useGps)
+        conversation.navigation.updateLocation({
+          latitude: 52.21,
+          longitude: 21.03,
+          accuracy: 5,
+          timestamp: Date.now(),
+        });
+      else
+        conversation.navigation.updateLocation({
+          latitude: 50,
+          longitude: 19,
+          accuracy: 5,
+          timestamp: Date.now() - 60000,
+        });
+      let modelCalls = 0;
+      const fetcher: typeof fetch = async (_url, init) => {
+        const request = JSON.parse(String(init?.body));
+        assert.ok(!JSON.stringify(request).includes('private-city-key'));
+        assert.ok(request.tools.some((value: any) => value.function.name === 'warsaw_events'));
+        if (++modelCalls === 1)
+          return new Response(
+            sse(
+              chunk({
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'events-call',
+                    type: 'function',
+                    function: { name: 'warsaw_events', arguments: '{}' },
+                  },
+                ],
+              }),
+            ) +
+              sse(chunk({}, 'tool_calls')) +
+              'data: [DONE]\n\n',
+            { headers: { 'content-type': 'text/event-stream' } },
+          );
+        const result = JSON.parse(
+          request.messages.findLast((value: any) => value.role === 'tool').content,
+        );
+        assert.equal(result.events[0].title, 'Koncert sąsiedzki');
+        assert.equal(result.origin.source, useGps ? 'gps' : 'home');
+        assert.equal(result.origin.coordinate.latitude, useGps ? 52.21 : 52.19902);
+        return completed('Niedaleko jest koncert sąsiedzki w domu kultury.');
+      };
+      assert.match(
+        await ask(conversation, 'Jakie są najbliższe wydarzenia?', fetcher),
+        /koncert sąsiedzki/,
+      );
+      assert.equal(cityRequests, 1);
+      assert.equal(modelCalls, 2);
+      assert.equal(
+        conversation.navigation.context().currentRoute,
+        null,
+        'events do not start a walking route',
+      );
+    }
+  });
+
+  it('returns a clear tool error on city API failures so the conversation can continue', async () => {
+    const { createWarsawEvents } = await import('@/src/events');
+    const conversation = createAssistantConversation(
+      undefined,
+      createWarsawEvents(
+        'private-city-key',
+        async () => new Response('private-city-key', { status: 401 }),
+      ),
+    );
+    let calls = 0;
+    const fetcher: typeof fetch = async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      if (++calls === 1)
+        return new Response(
+          sse(
+            chunk({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'events-failure',
+                  type: 'function',
+                  function: { name: 'warsaw_events', arguments: '{}' },
+                },
+              ],
+            }),
+          ) +
+            sse(chunk({}, 'tool_calls')) +
+            'data: [DONE]\n\n',
+          { headers: { 'content-type': 'text/event-stream' } },
+        );
+      const result = JSON.parse(
+        request.messages.findLast((value: any) => value.role === 'tool').content,
+      );
+      assert.match(result.error, /odrzuciło klucz/);
+      assert.ok(!JSON.stringify(request).includes('private-city-key'));
+      assert.equal(result.events, undefined);
+      return completed('Nie mogę teraz sprawdzić wydarzeń.');
+    };
+    assert.match(await ask(conversation, 'Co ciekawego w okolicy?', fetcher), /Nie mogę/);
   });
 });

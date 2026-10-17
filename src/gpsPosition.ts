@@ -1,4 +1,10 @@
-import { localOffset, offsetCoordinate, reliableFix, type Coordinate, type Fix } from './positioning';
+import {
+  type Coordinate,
+  type Fix,
+  localOffset,
+  offsetCoordinate,
+  reliableFix,
+} from '@/src/positioning';
 
 type Offset = { east: number; north: number };
 type Candidate = Offset & { timestamp: number };
@@ -13,7 +19,10 @@ export class GpsPosition {
   private pending: Candidate | null = null;
 
   observeGps(fix: Fix, now: number): boolean {
-    if (!reliableFix(fix, now)) { this.pending = null; return false; }
+    if (!reliableFix(fix, now)) {
+      this.pending = null;
+      return false;
+    }
     if (this.latestFix && fix.timestamp <= this.latestFix.timestamp) return false;
     if (this.latestFix) {
       const seconds = (fix.timestamp - this.latestFix.timestamp) / 1000;
@@ -30,7 +39,8 @@ export class GpsPosition {
       return true;
     }
     const measured = localOffset(this.origin, fix);
-    const distance = (offset: Offset) => Math.hypot(measured.east - offset.east, measured.north - offset.north);
+    const distance = (offset: Offset) =>
+      Math.hypot(measured.east - offset.east, measured.north - offset.north);
     const deadband = Math.max(2, fix.accuracy! * 0.75);
     if (distance(this.position) <= deadband && distance(this.target) <= deadband) {
       this.pending = null;
@@ -47,7 +57,10 @@ export class GpsPosition {
       return false;
     }
     if (seconds < 0.8) return false;
-    this.target = { east: (measured.east + previous.east) / 2, north: (measured.north + previous.north) / 2 };
+    this.target = {
+      east: (measured.east + previous.east) / 2,
+      north: (measured.north + previous.north) / 2,
+    };
     this.pending = null;
     return true;
   }
@@ -61,8 +74,8 @@ export class GpsPosition {
     if (distance > 0.001) {
       // Follow walking GPS promptly while spreading each update over frames.
       const step = Math.min(distance * (1 - Math.exp(-dt / 1.5)), 3 * dt);
-      this.position.east += east / distance * step;
-      this.position.north += north / distance * step;
+      this.position.east += (east / distance) * step;
+      this.position.north += (north / distance) * step;
     }
     return offsetCoordinate(this.origin, this.position.east, this.position.north);
   }

@@ -3,6 +3,9 @@
   "compilerOptions": {
     "types": ["react", "react-native", "node"],
     "strict": true,
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+    "paths": {
+      "@/*": ["./*"]
+    }
   }
 }

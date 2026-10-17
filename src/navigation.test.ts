@@ -1,25 +1,47 @@
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createNavigation, distanceToPath, type NavigationProvider, type Place, type WalkingRoute } from './navigation';
-import { offsetCoordinate, type Coordinate } from './positioning';
-import { TENDUR_KEBAB } from './banners';
+import { describe, it } from 'node:test';
+import { TENDUR_KEBAB } from '@/src/banners';
+import {
+  createNavigation,
+  distanceToPath,
+  type NavigationProvider,
+  type Place,
+  type WalkingRoute,
+} from '@/src/navigation';
+import { type Coordinate, offsetCoordinate } from '@/src/positioning';
 
 const origin: Coordinate = { latitude: 52.2, longitude: 21 };
 const at = (east: number, north = 0) => offsetCoordinate(origin, east, north);
-const place: Place = { id: 'pharmacy', name: 'Apteka', address: 'Testowa 1', location: at(200), openNow: true };
+const place: Place = {
+  id: 'pharmacy',
+  name: 'Apteka',
+  address: 'Testowa 1',
+  location: at(200),
+  openNow: true,
+};
 const walking: WalkingRoute = {
   steps: [
     { instruction: 'Idź prosto ulicą Testową.', distance: 100, path: [origin, at(50), at(100)] },
     { instruction: 'Idź prosto do apteki.', distance: 100, path: [at(100), at(150), at(200)] },
-  ], distance: 200, durationSeconds: 180, warnings: ['Zachowaj ostrożność.'],
+  ],
+  distance: 200,
+  durationSeconds: 180,
+  warnings: ['Zachowaj ostrożność.'],
 };
 const signal = () => new AbortController().signal;
 function setup() {
   let clock = 1000000;
-  let searchCalls = 0, routeCalls = 0;
+  let searchCalls = 0,
+    routeCalls = 0;
   const provider: NavigationProvider = {
-    async search() { searchCalls++; return [place]; },
-    async route() { routeCalls++; return walking; },
+    async search() {
+      searchCalls++;
+      return [place];
+    },
+    async route() {
+      routeCalls++;
+      return walking;
+    },
   };
   const navigation = createNavigation(provider, () => clock);
   const locate = (east = 0, north = 0, accuracy = 5) => {
@@ -27,7 +49,12 @@ function setup() {
     navigation.updateLocation({ ...at(east, north), timestamp: clock, accuracy });
   };
   locate();
-  return { navigation, locate, advance: (ms: number) => { clock += ms; },
+  return {
+    navigation,
+    locate,
+    advance: (ms: number) => {
+      clock += ms;
+    },
     counts: () => ({ searchCalls, routeCalls }),
     async start() {
       await navigation.execute({ action: 'search', query: 'apteka', openNow: true }, signal());
@@ -42,7 +69,11 @@ describe('remembered conversational walking route', () => {
     const first = await s.start();
     const id = first.currentRoute!.id;
     await s.navigation.execute({ action: 'next' }, signal());
-    assert.equal(s.navigation.context().currentRoute!.stepIndex, 0, 'cannot advance before reaching the endpoint');
+    assert.equal(
+      s.navigation.context().currentRoute!.stepIndex,
+      0,
+      'cannot advance before reaching the endpoint',
+    );
     s.locate(100);
     await s.navigation.execute({ action: 'next' }, signal());
     assert.equal(s.navigation.context().currentRoute!.stepIndex, 1);
@@ -68,7 +99,10 @@ describe('remembered conversational walking route', () => {
     await s.navigation.execute({ action: 'start', placeId: TENDUR_KEBAB.id }, signal());
     assert.equal(s.navigation.context().savedRoutes.length, 2);
     assert.equal(s.navigation.context().savedRoutes[0]!.status, 'paused');
-    assert.equal(s.navigation.context().currentRoute!.destination.location.latitude, TENDUR_KEBAB.latitude);
+    assert.equal(
+      s.navigation.context().currentRoute!.destination.location.latitude,
+      TENDUR_KEBAB.latitude,
+    );
     await s.navigation.execute({ action: 'resume', routeId: first.currentRoute!.id }, signal());
     assert.equal(s.navigation.context().currentRoute!.destination.id, place.id);
     assert.equal(s.counts().routeCalls, 2);
@@ -80,23 +114,29 @@ describe('remembered conversational walking route', () => {
     s.locate(0, 70);
     await s.navigation.execute({ action: 'replan' }, signal());
     assert.equal(s.counts().routeCalls, 1);
-    s.advance(7000); s.locate(0, 70);
+    s.advance(7000);
+    s.locate(0, 70);
     assert.equal(s.navigation.context().offRoute, false);
-    s.advance(7000); s.locate(0, 70);
+    s.advance(7000);
+    s.locate(0, 70);
     assert.equal(s.navigation.context().offRoute, true);
     assert.match(s.navigation.reminder()!, /poza zapisaną drogą/);
     assert.equal(s.navigation.reminder(), null, 'does not repeat immediately');
     const previous = s.navigation.context().currentRoute!.id;
     await s.navigation.execute({ action: 'replan' }, signal());
     assert.equal(s.counts().routeCalls, 2);
-    assert.equal(s.navigation.context().savedRoutes.find(route => route.id === previous)!.status, 'paused');
+    assert.equal(
+      s.navigation.context().savedRoutes.find((route) => route.id === previous)!.status,
+      'paused',
+    );
   });
 
   it('clears transient deviation when the user is back and rejects poor or stale GPS', async () => {
     const s = setup();
     await s.start();
     s.locate(0, 70);
-    s.advance(15000); s.locate(0, 70);
+    s.advance(15000);
+    s.locate(0, 70);
     s.locate(50);
     assert.equal(s.navigation.context().offRoute, false);
     s.locate(100, 0, 100);
@@ -115,7 +155,8 @@ describe('remembered conversational walking route', () => {
     s.locate(100);
     assert.match(s.navigation.reminder()!, /Co dalej/);
     assert.equal(s.navigation.context().currentRoute!.stepIndex, 0);
-    s.advance(120000); s.locate(100);
+    s.advance(120000);
+    s.locate(100);
     assert.match(s.navigation.reminder()!, /wszystko w porządku/);
     assert.ok(s.navigation.context().lastReminder);
   });
@@ -125,7 +166,8 @@ describe('remembered conversational walking route', () => {
     await s.start();
     await s.navigation.execute({ action: 'search', query: 'apteka', openNow: true }, signal());
     assert.equal(s.counts().searchCalls, 1);
-    s.advance(301000); s.locate();
+    s.advance(301000);
+    s.locate();
     await s.navigation.execute({ action: 'search', query: 'apteka', openNow: true }, signal());
     assert.equal(s.counts().searchCalls, 2);
   });
@@ -134,13 +176,21 @@ describe('remembered conversational walking route', () => {
     let calls = 0;
     const controller = new AbortController();
     const navigation = createNavigation({
-      async search() { return [place]; },
-      async route() { if (++calls === 2) controller.abort(); return walking; },
+      async search() {
+        return [place];
+      },
+      async route() {
+        if (++calls === 2) controller.abort();
+        return walking;
+      },
     });
     navigation.updateLocation({ ...origin, accuracy: 5, timestamp: Date.now() });
     await navigation.execute({ action: 'search', query: 'apteka' }, signal());
     const first = await navigation.execute({ action: 'start', placeId: place.id }, signal());
-    await assert.rejects(navigation.execute({ action: 'start', placeId: TENDUR_KEBAB.id }, controller.signal), /przerwane/);
+    await assert.rejects(
+      navigation.execute({ action: 'start', placeId: TENDUR_KEBAB.id }, controller.signal),
+      /przerwane/,
+    );
     assert.equal(navigation.context().currentRoute!.id, first.currentRoute!.id);
     assert.equal(navigation.context().savedRoutes.length, 1);
   });
@@ -151,12 +201,11 @@ describe('map data boundary', () => {
     assert.ok(distanceToPath(at(50, 50), [origin, at(0, 100), at(100, 100)]) > 49);
     assert.ok(distanceToPath(at(0, 50), [origin, at(0, 100), at(100, 100)]) < 1);
   });
-
 });
 
 describe('direction selected from an invitation', () => {
   it('switches the compass without a map request and retains the previous walking route for resuming', async () => {
-    const { INVITATION_DESTINATIONS } = await import('./invitations');
+    const { INVITATION_DESTINATIONS } = await import('@/src/invitations');
     const s = setup();
     const first = await s.start();
     s.navigation.pointTo(INVITATION_DESTINATIONS.Danka);
@@ -175,17 +224,26 @@ describe('direction selected from an invitation', () => {
   });
 
   it('can remember a compass destination while waiting for GPS', async () => {
-    const { INVITATION_DESTINATIONS } = await import('./invitations');
+    const { INVITATION_DESTINATIONS } = await import('@/src/invitations');
     const provider: NavigationProvider = {
-      async search() { throw new Error('No search expected'); },
-      async route() { throw new Error('No route expected'); },
+      async search() {
+        throw new Error('No search expected');
+      },
+      async route() {
+        throw new Error('No route expected');
+      },
     };
     const navigation = createNavigation(provider);
     navigation.pointTo(INVITATION_DESTINATIONS.Danka);
     assert.equal(navigation.context().locationCurrent, false);
     assert.deepEqual(navigation.context().directionTarget, INVITATION_DESTINATIONS.Danka);
     assert.equal(navigation.context().currentRoute, null);
-    assert.deepEqual(TENDUR_KEBAB, { id: 'tendur-kebab', title: 'Tendur Kebab', latitude: 52.2402694, longitude: 20.9815395 });
+    assert.deepEqual(TENDUR_KEBAB, {
+      id: 'tendur-kebab',
+      title: 'Tendur Kebab',
+      latitude: 52.2402694,
+      longitude: 20.9815395,
+    });
   });
 });
 
@@ -194,9 +252,15 @@ describe('walking orientation context', () => {
     const s = setup();
     await s.start();
     s.navigation.updateHeading(90, Date.parse(s.navigation.context().currentTime));
-    assert.ok(Math.abs(s.navigation.context().currentRoute!.direction!.relativeToRearCamera!) < 1, 'eastward path is ahead of an east-facing rear camera');
+    assert.ok(
+      Math.abs(s.navigation.context().currentRoute!.direction!.relativeToRearCamera!) < 1,
+      'eastward path is ahead of an east-facing rear camera',
+    );
     s.navigation.updateHeading(0, Date.parse(s.navigation.context().currentTime));
-    assert.ok(s.navigation.context().currentRoute!.direction!.relativeToRearCamera! > 89, 'eastward path is to the right of a north-facing camera');
+    assert.ok(
+      s.navigation.context().currentRoute!.direction!.relativeToRearCamera! > 89,
+      'eastward path is to the right of a north-facing camera',
+    );
     s.advance(2100);
     assert.equal(s.navigation.context().rearCameraHeading, null);
     assert.equal(s.navigation.context().currentRoute!.direction!.relativeToRearCamera, null);
