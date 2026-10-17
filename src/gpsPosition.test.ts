@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { GpsPosition } from './gpsPosition';
-import { createDemoBanners } from './banners';
+import { TENDUR_KEBAB } from './banners';
 import { localOffset, offsetCoordinate } from './positioning';
 
 const origin = { latitude: 52.23, longitude: 21.01 };
@@ -47,9 +47,9 @@ describe('GPS-only position', () => {
     }
     assert.ok(east(position) > 10 && east(position) < 18, `moved ${east(position)} m`);
   });
-  it('keeps placed banners fixed through GPS movement', () => {
+  it('keeps Tendur Kebab fixed through GPS movement', () => {
     const position = initialized();
-    const banners = createDemoBanners(position.advance(0)!);
+    const banners = [TENDUR_KEBAB];
     const saved = structuredClone(banners);
     position.observeGps(fix(6, 11000), 11000);
     position.observeGps(fix(6, 12000), 12000);

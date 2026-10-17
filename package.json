@@ -1,5 +1,5 @@
 {
-  "name": "nearby-ar",
+  "name": "prowadzmnie",
   "version": "0.1.0",
   "private": true,
   "main": "index.ts",
@@ -10,6 +10,8 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@openrouter/ai-sdk-provider": "^3.1.0",
+    "ai": "^7.0.127",
     "expo": "~57.0.30",
     "expo-camera": "~57.0.6",
     "expo-dev-client": "~57.0.20",
@@ -18,7 +20,8 @@
     "expo-speech": "~57.0.3",
     "expo-speech-recognition": "~57.0.0",
     "react": "19.2.3",
-    "react-native": "0.86.3"
+    "react-native": "0.86.3",
+    "react-native-view-shot": "5.1.0"
   },
   "devDependencies": {
     "@types/node": "^24",
