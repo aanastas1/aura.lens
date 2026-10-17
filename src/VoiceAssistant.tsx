@@ -17,10 +17,18 @@ import {
   View,
 } from 'react-native';
 import { type AssistantConversation, type AssistantPhoto } from '@/src/assistant';
+import type { Invitation } from '@/src/invitations';
 import type { MapSource } from '@/src/navigation';
 import { BUTTON_SIZE, colors, radius, space, type } from '@/src/theme';
 
-type Phase = 'idle' | 'permission' | 'listening' | 'stopping' | 'answering' | 'speaking';
+type Phase =
+  | 'idle'
+  | 'permission'
+  | 'listening'
+  | 'stopping'
+  | 'answering'
+  | 'speaking'
+  | 'announcing';
 const labels: Record<Phase, string> = {
   idle: 'Przytrzymaj i mów',
   permission: 'Zezwól na mikrofon',
@@ -28,6 +36,7 @@ const labels: Record<Phase, string> = {
   stopping: 'Myślę…',
   answering: 'Myślę…',
   speaking: 'Mówię odpowiedź…',
+  announcing: 'Czytam powiadomienie…',
 };
 
 type CaptureResult = { photo: AssistantPhoto } | { error: string };
@@ -35,9 +44,13 @@ type CaptureResult = { photo: AssistantPhoto } | { error: string };
 export function VoiceAssistant({
   capturePhoto,
   conversation,
+  announcement,
+  onAnnouncementRead,
 }: {
   capturePhoto: () => Promise<AssistantPhoto>;
   conversation: AssistantConversation;
+  announcement: Invitation | null;
+  onAnnouncementRead: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [transcript, setTranscript] = useState('');
@@ -219,10 +232,34 @@ export function VoiceAssistant({
   }, []);
 
   useEffect(() => {
+    const s = state.current;
+    // Announcements wait for recognition, requests and other speech to finish.
+    // The queue lives beside the notification card, so closing it never skips the reading.
+    if (!announcement || s.disposed || s.phase !== 'idle') return;
+    transition('announcing');
+    const finishReading = () => {
+      if (s.disposed) return;
+      onAnnouncementRead();
+      transition('idle');
+    };
+    Speech.speak(announcement.text, {
+      language: 'pl-PL',
+      rate: 0.85,
+      onDone: finishReading,
+      onStopped: finishReading,
+      onError: () => {
+        if (s.disposed) return;
+        setError('Nie mogę przeczytać powiadomienia na głos. Jego treść znajdziesz na ekranie.');
+        finishReading();
+      },
+    });
+  }, [announcement, phase, onAnnouncementRead]);
+
+  useEffect(() => {
     const timer = setInterval(() => {
       const s = state.current;
       // Never interrupt listening, an answer, or speech. This check makes no network request.
-      if (s.disposed || s.phase !== 'idle') return;
+      if (s.disposed || s.phase !== 'idle' || announcement) return;
       const message = conversation.navigation.reminder();
       if (!message) return;
       setAnswer(message);
@@ -244,7 +281,7 @@ export function VoiceAssistant({
       });
     }, 5000);
     return () => clearInterval(timer);
-  }, [conversation]);
+  }, [conversation, announcement]);
 
   const begin = async () => {
     const s = state.current;
@@ -329,7 +366,7 @@ export function VoiceAssistant({
   };
 
   const listening = phase === 'listening';
-  const busy = ['stopping', 'answering', 'speaking'].includes(phase);
+  const busy = ['stopping', 'answering', 'speaking', 'announcing'].includes(phase);
   const iconColor = listening ? colors.white : colors.navy;
   const showCard = !!transcript || !!answer || !!error;
   return (

@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 import { answerWithPhoto, createAssistantConversation, MODEL_ID } from '@/src/assistant';
 
 const photo = 'data:image/jpeg;base64,/9j/2Q==';
+const summaryInput = (request: any) =>
+  JSON.parse(request.messages[1].content.match(/<rozmowa>\n(.*)\n<\/rozmowa>/s)[1]);
 const sse = (value: unknown) => `data: ${JSON.stringify(value)}\n\n`;
 const chunk = (delta: object, finish_reason: string | null = null) => ({
   id: 'assistant-test',
@@ -72,6 +74,8 @@ describe('streaming assistant with a photo', () => {
     assert.match(systemText, /po polsku/);
     for (const fact of [
       'ma na imię Jadwiga',
+      'bolą ją nogi i czasami ma migreny',
+      'Nie może być narażona na znaczny wysiłek',
       'Sanktuarium św. Andrzeja Boboli',
       'koleżanką Basią',
       'sąsiadką Danką',
@@ -194,8 +198,8 @@ describe('continuous conversation', () => {
     const answers: any[] = [];
     const fetcher: typeof fetch = async (_url, init) => {
       const request = JSON.parse(String(init?.body));
-      if (JSON.stringify(request.messages[0]).includes('Streść dotychczasową rozmowę')) {
-        summaries.push(JSON.parse(request.messages[1].content));
+      if (JSON.stringify(request.messages[0]).includes('Streszczasz rozmowę')) {
+        summaries.push(summaryInput(request));
         assert.ok(!JSON.stringify(request).includes('image_url'));
         return completed(`Streszczenie numer ${summaries.length}.`);
       }
@@ -234,8 +238,8 @@ describe('continuous conversation', () => {
     let answerRequest: any;
     const retry: typeof fetch = async (_url, init) => {
       const request = JSON.parse(String(init?.body));
-      if (JSON.stringify(request.messages[0]).includes('Streść dotychczasową rozmowę')) {
-        compressionInput = JSON.parse(request.messages[1].content);
+      if (JSON.stringify(request.messages[0]).includes('Streszczasz rozmowę')) {
+        compressionInput = summaryInput(request);
         return completed('Zachowane ustalenia.');
       }
       answerRequest = request;
@@ -323,8 +327,8 @@ describe('invitations in conversation memory', () => {
     let compressionInput: any;
     await ask(conversation, 'Kto zaprasza?', async (_url, init) => {
       const request = JSON.parse(String(init?.body));
-      if (JSON.stringify(request.messages[0]).includes('Streść dotychczasową rozmowę')) {
-        compressionInput = JSON.parse(request.messages[1].content);
+      if (JSON.stringify(request.messages[0]).includes('Streszczasz rozmowę')) {
+        compressionInput = summaryInput(request);
         conversation.rememberInvitation(basia);
         return completed('Danka zaprosiła Jadwigę na ciasto.');
       }
@@ -410,6 +414,55 @@ describe('navigation tool in the assistant conversation', () => {
     assert.ok(JSON.stringify(last.messages[0]).includes('Idź prosto ulicą Testową.'));
     assert.equal(routeRequests, 1);
     assert.equal(conversation.navigation.context().currentRoute!.stepIndex, 0);
+  });
+});
+
+describe('unrelated photo', () => {
+  const toolCalls = (calls: { name: string; args: object }[]) =>
+    new Response(
+      sse(
+        chunk({
+          tool_calls: calls.map(({ name, args }, index) => ({
+            index,
+            id: `call-${index}`,
+            type: 'function',
+            function: { name, arguments: JSON.stringify(args) },
+          })),
+        }),
+      ) +
+        sse(chunk({}, 'tool_calls')) +
+        'data: [DONE]\n\n',
+      { headers: { 'content-type': 'text/event-stream' } },
+    );
+
+  it('omits the photo from later tool steps once the model drops it', async () => {
+    const requests: any[] = [];
+    const fetcher: typeof fetch = async (_url, init) => {
+      requests.push(JSON.parse(String(init?.body)));
+      return requests.length === 1
+        ? toolCalls([
+            { name: 'navigation', args: { action: 'status' } },
+            { name: 'drop_photo', args: {} },
+          ])
+        : completed('Nie mamy teraz zapisanej drogi.');
+    };
+    await ask(createAssistantConversation(), 'Dokąd idziemy?', fetcher);
+    assert.equal(requests.length, 2);
+    assert.ok(JSON.stringify(requests[0].messages).includes(photo));
+    assert.ok(!JSON.stringify(requests[1].messages).includes(photo));
+    assert.ok(JSON.stringify(requests[1].messages).includes('Dokąd idziemy?'));
+  });
+
+  it('keeps the photo in later tool steps when the model does not drop it', async () => {
+    const requests: any[] = [];
+    const fetcher: typeof fetch = async (_url, init) => {
+      requests.push(JSON.parse(String(init?.body)));
+      return requests.length === 1
+        ? toolCalls([{ name: 'navigation', args: { action: 'status' } }])
+        : completed('Nie mamy teraz zapisanej drogi.');
+    };
+    await ask(createAssistantConversation(), 'Co jest przede mną i dokąd idziemy?', fetcher);
+    assert.ok(JSON.stringify(requests[1].messages).includes(photo));
   });
 });
 
@@ -626,3 +679,76 @@ describe('Warsaw events tool in the assistant conversation', () => {
     assert.match(await ask(conversation, 'Co ciekawego w okolicy?', fetcher), /Nie mogę/);
   });
 });
+
+describe('help interrupts the assistant', () => {
+  it('aborts streaming immediately and does not retain the interrupted turn', async () => {
+    const conversation = createAssistantConversation();
+    let ready!: () => void;
+    const started = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    let requestSignal: AbortSignal | undefined;
+    const waiting: typeof fetch = async (_url, init) => {
+      requestSignal = init?.signal ?? undefined;
+      ready();
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal!.addEventListener('abort', () => reject(new Error('Interrupted')), {
+          once: true,
+        });
+      });
+    };
+    const request = ask(conversation, 'Przerwane pytanie przed pomocą', waiting);
+    await started;
+    conversation.interrupt();
+    assert.equal(requestSignal?.aborted, true);
+    assert.equal(conversation.navigation.context().suspended, true);
+    await assert.rejects(request);
+    let nextRequest: any;
+    await ask(conversation, 'Dziękuję', async (_url, init) => {
+      nextRequest = JSON.parse(String(init?.body));
+      return completed('Jestem tutaj.');
+    });
+    assert.ok(!JSON.stringify(nextRequest).includes('Przerwane pytanie przed pomocą'));
+    assert.equal(
+      conversation.navigation.context().suspended,
+      true,
+      'ordinary conversation does not restart a route',
+    );
+  });
+});
+
+describe('SOS assistant', () => {
+  it('asks follow-up questions with shared history, without camera or tools, keeping navigation stopped', async () => {
+    const conversation = createAssistantConversation();
+    conversation.interrupt();
+    const requests: any[] = [];
+    const fetcher: typeof fetch = async (_url, init) => {
+      requests.push(JSON.parse(String(init?.body)));
+      return completed('Jadwigo, co się stało?');
+    };
+    const askHelp = (text: string) =>
+      conversation.answerForHelp(text, 'test-key', new AbortController().signal, () => {}, fetcher);
+    await askHelp('Nie wiem co zrobić');
+    await askHelp('Nie poznaję tego miejsca');
+    expectHelpRequest(requests[0]);
+    assert.ok(JSON.stringify(requests[1].messages).includes('Nie wiem co zrobić'));
+    assert.ok(JSON.stringify(requests[1].messages).includes('Nie poznaję tego miejsca'));
+    assert.equal(conversation.navigation.context().suspended, true);
+    let normalRequest: any;
+    await ask(conversation, 'Pamiętasz?', async (_url, init) => {
+      normalRequest = JSON.parse(String(init?.body));
+      return completed('Tak.');
+    });
+    assert.ok(JSON.stringify(normalRequest.messages).includes('Nie poznaję tego miejsca'));
+  });
+});
+function expectHelpRequest(request: any) {
+  assert.ok(!request.tools?.length);
+  assert.ok(!JSON.stringify(request.messages).includes('image_url'));
+  const content = request.messages.find((message: any) => message.role === 'system').content;
+  const system =
+    typeof content === 'string' ? content : content.map((part: any) => part.text).join('');
+  assert.match(system, /jedno krótkie, konkretne pytanie/);
+  assert.match(system, /Nawigacja pozostaje zatrzymana/);
+  assert.equal(system.split('Córka Jadwigi ma na imię Maria').length - 1, 1);
+}

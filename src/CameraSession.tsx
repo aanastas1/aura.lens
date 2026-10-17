@@ -1,10 +1,11 @@
 import { CameraView } from 'expo-camera';
 import * as Location from 'expo-location';
 import { Accelerometer, Magnetometer } from 'expo-sensors';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Image,
   Pressable,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -16,7 +17,7 @@ import { TENDUR_KEBAB } from '@/src/banners';
 import { GpsPosition } from '@/src/gpsPosition';
 import {
   createTripleTap,
-  INVITATION_DESTINATIONS,
+  getInvitationDestination,
   type Invitation,
   randomInvitation,
 } from '@/src/invitations';
@@ -51,7 +52,7 @@ type SceneSnapshot = {
   resolve: (photo: AssistantPhoto) => void;
   reject: (error: Error) => void;
 };
-type Display = { target: Place; panels: Projected[]; message: string; warning: string };
+type Display = { target: Place; panels: Projected[]; message: string };
 
 const distanceParts = (d: number) => {
   if (d >= 1000)
@@ -84,15 +85,22 @@ export function CameraSession({ restart }: { restart: () => void }) {
   const [conversation] = useState(() => assistantConversation);
   const [registerHeaderTap] = useState(createTripleTap);
   const [invitation, setInvitation] = useState<Invitation | null>(null);
+  const [pendingAnnouncements, setPendingAnnouncements] = useState<Invitation[]>([]);
+  const finishAnnouncement = useCallback(
+    () => setPendingAnnouncements((pending) => pending.slice(1)),
+    [],
+  );
   const showInvitation = () => {
     if (!registerHeaderTap(performance.now())) return;
     const next = randomInvitation();
     conversation.rememberInvitation(next);
     setInvitation(next);
+    setPendingAnnouncements((pending) => [...pending, next]);
   };
+  const invitationTarget = invitation ? getInvitationDestination(invitation) : null;
   const acceptInvitation = () => {
-    if (!invitation) return;
-    conversation.navigation.pointTo(INVITATION_DESTINATIONS[invitation.sender]);
+    if (!invitationTarget) return;
+    conversation.navigation.pointTo(invitationTarget);
     setInvitation(null);
   };
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
@@ -115,7 +123,6 @@ export function CameraSession({ restart }: { restart: () => void }) {
     target: DEFAULT_TARGET,
     panels: [],
     message: 'Włączam aparat. Chwileczkę.',
-    warning: '',
   });
   const model = useRef({
     position: new GpsPosition(),
@@ -290,37 +297,36 @@ export function CameraSession({ restart }: { restart: () => void }) {
 
       if (time - lastRender >= 1000 / 30) {
         lastRender = time;
-        let message = '',
-          warning = '';
+        let message = '';
         if (error) message = error;
         else if (!cameraReady) message = 'Włączam aparat. Chwileczkę.';
         else if (!sensorsReady) message = 'Szukam kierunku. Trzymaj telefon przed sobą.';
         else if (!basis) message = 'Trzymaj telefon spokojnie.';
         else if (!gpsReady) message = gpsError || 'Szukam sygnału GPS. Wyjdź na zewnątrz.';
-        else if (state.compassAccuracy < 2)
-          warning = 'Kompas się gubi. Zatocz telefonem ósemkę w powietrzu.';
         const navigationState = conversation.navigation.hudState();
         const target = navigationState.directionTarget ?? DEFAULT_TARGET;
         const followingRoute = navigationState.followingRoute;
-        const projected = followingRoute
-          ? null
-          : waypointHud(
-              {
-                coordinate,
-                heading: state.heading,
-                current: cameraReady && gpsReady && !!basis && !error,
-              },
-              target.location,
-              viewport.width,
-              viewport.height,
-            );
+        const projected =
+          followingRoute || navigationState.suspended
+            ? null
+            : waypointHud(
+                {
+                  coordinate,
+                  heading: state.heading,
+                  current: cameraReady && gpsReady && !!basis && !error,
+                },
+                target.location,
+                viewport.width,
+                viewport.height,
+              );
         setDisplay({
           target,
           panels: projected ? [projected] : [],
-          message: followingRoute
-            ? error || conversation.navigation.displayStatus()
-            : message || (projected ? '' : 'Trzymaj telefon spokojnie.'),
-          warning,
+          message: navigationState.suspended
+            ? conversation.navigation.displayStatus()
+            : followingRoute
+              ? error || conversation.navigation.displayStatus()
+              : message || (projected ? '' : 'Trzymaj telefon spokojnie.'),
         });
       }
       frame = requestAnimationFrame(animate);
@@ -434,9 +440,6 @@ export function CameraSession({ restart }: { restart: () => void }) {
             </View>
           )}
         </View>
-        {!!display.warning && !display.message && (
-          <Text style={styles.warning}>{display.warning}</Text>
-        )}
         {failed && (
           <Pressable
             accessibilityRole="button"
@@ -448,30 +451,7 @@ export function CameraSession({ restart }: { restart: () => void }) {
           </Pressable>
         )}
       </Pressable>
-      {invitation && (
-        <View style={styles.notification}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Ustaw kierunek do ${invitation.sender}`}
-            onPress={acceptInvitation}
-            style={styles.invitationContent}
-          >
-            <Text style={styles.notificationTitle}>Zaproszenie od {invitation.sender}</Text>
-            <Text accessibilityLiveRegion="polite" style={styles.notificationText}>
-              {invitation.text}
-            </Text>
-            <Text style={styles.notificationText}>Dotknij, aby ustawić kierunek.</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Zamknij powiadomienie"
-            onPress={() => setInvitation(null)}
-            style={styles.dismissNotification}
-          >
-            <Text style={styles.dismissNotificationText}>Zamknij</Text>
-          </Pressable>
-        </View>
-      )}
+
       <View
         style={styles.cameraArea}
         onLayout={({ nativeEvent }) =>
@@ -484,7 +464,6 @@ export function CameraSession({ restart }: { restart: () => void }) {
           facing="back"
           mode="picture"
           pictureSize="1920x1080"
-          ratio="16:9"
           animateShutter={false}
           onCameraReady={() => setCameraReady(true)}
           onMountError={({ message }) => setError(message)}
@@ -496,7 +475,7 @@ export function CameraSession({ restart }: { restart: () => void }) {
           <View ref={sceneView} collapsable={false} pointerEvents="none" style={styles.snapshot}>
             <Image
               source={{ uri: snapshot.uri }}
-              resizeMode="contain"
+              resizeMode="cover"
               style={StyleSheet.absoluteFill}
               onLoad={() => void finishSnapshot(snapshot)}
               onError={() => {
@@ -512,8 +491,49 @@ export function CameraSession({ restart }: { restart: () => void }) {
             </View>
           </View>
         )}
+        {/* Overlay notifications without resizing the camera or including them in snapshots. */}
+        {invitation && (
+          <View style={[styles.notification, { maxHeight: viewport.height * 0.45 }]}>
+            <ScrollView contentContainerStyle={styles.notificationContent}>
+              <Pressable
+                disabled={!invitationTarget}
+                accessibilityRole={invitationTarget ? 'button' : undefined}
+                accessibilityLabel={
+                  invitationTarget ? `Ustaw kierunek do ${invitation.sender}` : undefined
+                }
+                onPress={acceptInvitation}
+                style={styles.invitationContent}
+              >
+                <Text style={styles.notificationTitle}>
+                  {invitation.sender === 'Maria'
+                    ? 'Wiadomość od córki Marii'
+                    : `Zaproszenie od ${invitation.sender}`}
+                </Text>
+                <Text accessibilityLiveRegion="polite" style={styles.notificationText}>
+                  {invitation.text}
+                </Text>
+                {invitationTarget && (
+                  <Text style={styles.notificationText}>Dotknij, aby ustawić kierunek.</Text>
+                )}
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Zamknij powiadomienie"
+                onPress={() => setInvitation(null)}
+                style={styles.dismissNotification}
+              >
+                <Text style={styles.dismissNotificationText}>Zamknij</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        )}
       </View>
-      <VoiceAssistant capturePhoto={capturePhoto} conversation={conversation} />
+      <VoiceAssistant
+        capturePhoto={capturePhoto}
+        conversation={conversation}
+        announcement={pendingAnnouncements[0] ?? null}
+        onAnnouncementRead={finishAnnouncement}
+      />
     </View>
   );
 }
@@ -567,12 +587,17 @@ const styles = StyleSheet.create({
     gap: space.s,
   },
   notification: {
-    padding: space.m,
-    gap: space.s,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+    elevation: 4,
     backgroundColor: colors.paper,
     borderBottomWidth: 4,
     borderBottomColor: colors.yellow,
   },
+  notificationContent: { padding: space.m, gap: space.s },
   invitationContent: { gap: space.s },
   notificationTitle: { ...type.title, color: colors.ink },
   notificationText: { ...type.body, color: colors.ink },
@@ -586,7 +611,7 @@ const styles = StyleSheet.create({
   },
   dismissNotificationText: { ...type.small, color: colors.white },
   brand: { color: colors.yellow, ...type.small, fontWeight: '900' },
-  instructionRow: { flexDirection: 'row', alignItems: 'center', gap: space.m },
+  instructionRow: { flexDirection: 'row', alignItems: 'center', gap: space.m, minHeight: 88 },
   glyph: {
     color: colors.yellow,
     fontSize: 80,
@@ -608,7 +633,6 @@ const styles = StyleSheet.create({
   distanceValue: { color: colors.ink, fontSize: 40, lineHeight: 46, fontWeight: '900' },
   distanceUnit: { color: colors.ink, ...type.small },
   message: { color: colors.white, ...type.title },
-  warning: { color: colors.yellow, ...type.small },
   retry: {
     backgroundColor: colors.yellow,
     minHeight: 72,

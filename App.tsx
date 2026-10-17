@@ -1,5 +1,7 @@
 import { useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
+import * as Speech from 'expo-speech';
+import { ExpoSpeechRecognitionModule as Recognition } from 'expo-speech-recognition';
 import { useEffect, useState } from 'react';
 import {
   AppState,
@@ -11,7 +13,9 @@ import {
   Text,
   View,
 } from 'react-native';
+import { assistantConversation } from '@/src/assistant';
 import { CameraSession } from '@/src/CameraSession';
+import { HelpPanel } from '@/src/HelpPanel';
 import { colors, radius, space, type } from '@/src/theme';
 
 export default function App() {
@@ -21,6 +25,15 @@ export default function App() {
   const [error, setError] = useState('');
   const [active, setActive] = useState(AppState.currentState === 'active');
   const [session, setSession] = useState(0);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const openHelp = () => {
+    assistantConversation.interrupt();
+    try {
+      Recognition.abort();
+    } catch {}
+    void Speech.stop().catch(() => {});
+    setHelpOpen(true);
+  };
 
   const requestAccess = async () => {
     setRequesting(true);
@@ -54,7 +67,7 @@ export default function App() {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={colors.navy} />
-      {allowed && active ? (
+      {helpOpen ? null : allowed && active ? (
         <CameraSession key={session} restart={() => setSession((value) => value + 1)} />
       ) : (
         <View style={styles.waiting}>
@@ -104,12 +117,41 @@ export default function App() {
           </View>
         </View>
       )}
+      {!helpOpen && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Pomoc. Zatrzymaj nawigację i wybierz pomoc"
+          onPress={openHelp}
+          style={styles.helpButton}
+        >
+          <Text style={styles.helpIcon}>SOS</Text>
+          <Text style={styles.helpLabel}>Pomoc</Text>
+        </Pressable>
+      )}
+      {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.navy },
+  helpButton: {
+    position: 'absolute',
+    left: space.m,
+    bottom: 96,
+    width: 88,
+    minHeight: 96,
+    padding: space.s,
+    borderRadius: radius.card,
+    borderWidth: 3,
+    borderColor: colors.white,
+    backgroundColor: colors.red,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 8,
+  },
+  helpIcon: { ...type.title, color: colors.white },
+  helpLabel: { ...type.small, color: colors.white },
   waiting: { flex: 1, justifyContent: 'center', padding: space.l, gap: space.l },
   plate: {
     alignSelf: 'stretch',

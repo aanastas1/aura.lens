@@ -266,3 +266,109 @@ describe('walking orientation context', () => {
     assert.equal(s.navigation.context().currentRoute!.direction!.relativeToRearCamera, null);
   });
 });
+
+describe('help stops all navigation', () => {
+  it('pauses every saved route, removes compass targets and reminders, and requires explicit resuming', async () => {
+    const s = setup();
+    const first = await s.start();
+    await s.navigation.execute({ action: 'start', placeId: TENDUR_KEBAB.id }, signal());
+    s.navigation.stopAll();
+    const stopped = s.navigation.context();
+    assert.equal(stopped.suspended, true);
+    assert.equal(stopped.currentRoute, null);
+    assert.equal(stopped.directionTarget, null);
+    assert.equal(stopped.savedRoutes.length, 2);
+    assert.ok(stopped.savedRoutes.every((route) => route.status === 'paused'));
+    assert.deepEqual(s.navigation.hudState(), {
+      directionTarget: null,
+      followingRoute: false,
+      suspended: true,
+    });
+    assert.equal(s.navigation.reminder(), null);
+    s.locate();
+    s.navigation.updateHeading(45, 1002000);
+    assert.equal(
+      s.navigation.context().suspended,
+      true,
+      'sensor updates must not resume navigation',
+    );
+    assert.match(s.navigation.displayStatus(), /wstrzymana/);
+    await s.navigation.execute({ action: 'status' }, signal());
+    assert.equal(s.navigation.context().suspended, true);
+    await s.navigation.execute({ action: 'resume', routeId: first.currentRoute!.id }, signal());
+    assert.equal(s.navigation.context().suspended, false);
+    assert.equal(s.navigation.context().currentRoute!.status, 'active');
+    assert.equal(s.counts().routeCalls, 2, 'resuming uses the saved route');
+  });
+
+  it('stops a compass-only destination even without GPS', () => {
+    const navigation = createNavigation({
+      async search() {
+        return [];
+      },
+      async route() {
+        return walking;
+      },
+    });
+    navigation.pointTo(place);
+    navigation.stopAll();
+    assert.equal(navigation.context().directionTarget, null);
+    assert.equal(navigation.context().suspended, true);
+    assert.equal(navigation.reminder(), null);
+    navigation.pointTo(place);
+    assert.equal(
+      navigation.context().suspended,
+      false,
+      'an explicit new destination can restart the compass',
+    );
+  });
+
+  it('aborts an in-flight route request and prevents a late response from restarting navigation', async () => {
+    let routeSignal: AbortSignal | undefined;
+    let finish!: (value: WalkingRoute) => void;
+    const pending = new Promise<WalkingRoute>((resolve) => {
+      finish = resolve;
+    });
+    const navigation = createNavigation({
+      async search() {
+        return [place];
+      },
+      async route(_origin, _place, requestSignal) {
+        routeSignal = requestSignal;
+        return pending;
+      },
+    });
+    navigation.updateLocation({ ...origin, accuracy: 5, timestamp: Date.now() });
+    const request = navigation.execute({ action: 'start', placeId: TENDUR_KEBAB.id }, signal());
+    assert.ok(routeSignal);
+    navigation.stopAll();
+    assert.equal(routeSignal.aborted, true);
+    finish(walking); // Deliberately model a provider that ignores cancellation.
+    await assert.rejects(request, /przerwane/);
+    assert.equal(navigation.context().suspended, true);
+    assert.equal(navigation.context().currentRoute, null);
+    assert.deepEqual(navigation.context().savedRoutes, []);
+  });
+
+  it('prevents a late place search from changing the state after help was requested', async () => {
+    let finish!: (value: Place[]) => void;
+    const pending = new Promise<Place[]>((resolve) => {
+      finish = resolve;
+    });
+    const navigation = createNavigation({
+      async search() {
+        return pending;
+      },
+      async route() {
+        return walking;
+      },
+    });
+    navigation.updateLocation({ ...origin, accuracy: 5, timestamp: Date.now() });
+    const request = navigation.execute({ action: 'search', query: 'apteka' }, signal());
+    navigation.stopAll();
+    finish([place]);
+    await assert.rejects(request, /przerwane/);
+    assert.deepEqual(navigation.context().places, []);
+    assert.equal(navigation.context().suspended, true);
+  });
+});

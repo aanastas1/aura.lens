@@ -1,7 +1,7 @@
 import type { Place } from '@/src/navigation';
 
 export type Invitation = {
-  sender: 'Basia' | 'Danka';
+  sender: 'Basia' | 'Danka' | 'Maria';
   text: string;
   createdAt: number;
 };
@@ -23,6 +23,14 @@ const invitations: Omit<Invitation, 'createdAt'>[] = [
     sender: 'Danka',
     text: 'Jadwigo, wpadnij do mnie na kawałek ciasta i pogaduszki. To blisko, w tym samym bloku. Danka',
   },
+  {
+    sender: 'Danka',
+    text: 'Jadwigo, wpadnij do mnie, pooglądamy razem „Jeden z dziesięciu”. Danka',
+  },
+  {
+    sender: 'Maria',
+    text: 'Mamo, chciałabym Cię odwiedzić z Twoim wnuczkiem Kajetanem. Daj znać, czy możemy wpaść. Maria',
+  },
 ];
 
 export function randomInvitation(random = Math.random, now = Date.now()): Invitation {
@@ -42,19 +50,21 @@ export function createTripleTap() {
 // Demo meeting points, fixed geographically; these are not live friend locations.
 // Sources: https://mapa.targeo.pl/raclawicka-17--ul/warszawa-02-601/ulica
 // https://mapcarta.com/W1426697668 (park reference point, not a confirmed entrance).
-export const INVITATION_DESTINATIONS: Readonly<Record<Invitation['sender'], Place>> = Object.freeze(
-  {
-    Danka: Object.freeze({
-      id: 'danka-home',
-      name: 'Danka',
-      address: 'ul. Racławicka 17, Warszawa',
-      location: Object.freeze({ latitude: 52.19902, longitude: 21.0197395 }),
-    }),
-    Basia: Object.freeze({
-      id: 'basia-park',
-      name: 'Basia — park Morskie Oko',
-      address: 'Park Morskie Oko, Warszawa',
-      location: Object.freeze({ latitude: 52.20708, longitude: 21.02617 }),
-    }),
-  },
-);
+export const INVITATION_DESTINATIONS: Readonly<Record<'Basia' | 'Danka', Place>> = Object.freeze({
+  Danka: Object.freeze({
+    id: 'danka-home',
+    name: 'Danka',
+    address: 'ul. Racławicka 17, Warszawa',
+    location: Object.freeze({ latitude: 52.19902, longitude: 21.0197395 }),
+  }),
+  Basia: Object.freeze({
+    id: 'basia-park',
+    name: 'Basia — park Morskie Oko',
+    address: 'Park Morskie Oko, Warszawa',
+    location: Object.freeze({ latitude: 52.20708, longitude: 21.02617 }),
+  }),
+});
+
+export function getInvitationDestination(invitation: Invitation): Place | null {
+  return invitation.sender === 'Maria' ? null : INVITATION_DESTINATIONS[invitation.sender];
+}

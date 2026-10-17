@@ -97,6 +97,8 @@ function directionAlongPath(point: Coordinate, path: Coordinate[], heading: numb
 }
 
 export function createNavigation(provider: NavigationProvider, now = Date.now) {
+  let suspended = false;
+  const requests = new Set<AbortController>();
   let fix: Fix | null = null;
   let heading: { degrees: number; timestamp: number } | null = null;
   let lastReplanAt = -Infinity;
@@ -148,6 +150,7 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
       location: fix,
       locationCurrent: fresh(),
       offRoute,
+      suspended,
       directionTarget,
       preferences,
       lastReminder: lastReminderText ? { text: lastReminderText, at: lastReminder } : null,
@@ -183,15 +186,26 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
   return {
     context: view,
     sources: () => selected()?.sources ?? places.flatMap((place) => place.sources ?? []),
+    stopAll() {
+      suspended = true;
+      for (const request of requests) request.abort();
+      for (const route of routes) if (route.status === 'active') route.status = 'paused';
+      selectedId = null;
+      directionTarget = null;
+      lastReminderText = null;
+      resetCheck();
+    },
     pointTo(place: Place) {
+      suspended = false;
       const previous = selected();
       if (previous?.status === 'active') previous.status = 'paused';
       selectedId = null;
       directionTarget = place;
       resetCheck();
     },
-    hudState: () => ({ directionTarget, followingRoute: !!selected() }),
+    hudState: () => ({ directionTarget, followingRoute: !!selected(), suspended }),
     displayStatus() {
+      if (suspended) return 'Nawigacja wstrzymana. Możesz poprosić o wznowienie drogi.';
       const route = selected();
       if (!route) return '';
       if (route.status === 'paused') return `Droga do: ${route.place.name}. Wstrzymana.`;
@@ -251,127 +265,153 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
       return message;
     },
     async execute(command: NavigationCommand, signal: AbortSignal) {
-      if (signal.aborted) throw new Error('Nawigacja przerwana.');
-      if (
-        !['search', 'start', 'status', 'next', 'pause', 'resume', 'replan'].includes(command.action)
-      )
-        throw new Error('Nieznane polecenie nawigacji.');
-      lastInteraction = now();
-      if (command.preferences) {
-        const next = command.preferences
-          .map((value) => value.trim())
-          .filter(Boolean)
-          .slice(0, 10);
-        if (JSON.stringify(next) !== JSON.stringify(preferences)) searchCache = null;
-        preferences = next;
-      }
-      if (command.action === 'search') {
-        const origin = requireFix();
-        const query = command.query?.trim();
-        if (!query) throw new Error('Podaj nazwę miejsca lub adres.');
-        const openNow = command.openNow ?? false;
+      const callerSignal = signal;
+      const request = new AbortController();
+      const abort = () => request.abort();
+      if (callerSignal.aborted) abort();
+      callerSignal.addEventListener('abort', abort, { once: true });
+      requests.add(request);
+      signal = request.signal;
+      try {
+        if (signal.aborted) throw new Error('Nawigacja przerwana.');
         if (
-          !searchCache ||
-          searchCache.query !== query ||
-          searchCache.openNow !== openNow ||
-          now() - searchCache.at > 300000 ||
-          destination(origin, searchCache.origin).distance > 100
-        ) {
-          const results = await provider.search(query, origin, openNow, signal, { preferences });
-          if (signal.aborted) throw new Error('Wyszukiwanie przerwane.');
-          places = results;
-          searchCache = { query, openNow, origin, at: now() };
+          !['search', 'start', 'status', 'next', 'pause', 'resume', 'replan'].includes(
+            command.action,
+          )
+        )
+          throw new Error('Nieznane polecenie nawigacji.');
+        lastInteraction = now();
+        if (command.preferences) {
+          const next = command.preferences
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .slice(0, 10);
+          if (JSON.stringify(next) !== JSON.stringify(preferences)) searchCache = null;
+          preferences = next;
         }
-        return view();
-      }
-      let route = command.routeId ? routes.find((item) => item.id === command.routeId) : selected();
-      if (command.routeId && !route) throw new Error('Nie znalazłem zapisanej trasy.');
-      if (command.action === 'start') {
-        const origin = requireFix();
-        const place =
-          command.placeId === TENDUR_KEBAB.id
-            ? { id: TENDUR_KEBAB.id, name: TENDUR_KEBAB.title, address: '', location: TENDUR_KEBAB }
-            : places.find((item) => item.id === command.placeId);
-        if (!place)
-          throw new Error(
-            'Najpierw wyszukaj miejsce. Wybierz identyfikator z wyników, nie wymyślaj adresu.',
+        if (command.action === 'search') {
+          const origin = requireFix();
+          const query = command.query?.trim();
+          if (!query) throw new Error('Podaj nazwę miejsca lub adres.');
+          const openNow = command.openNow ?? false;
+          if (
+            !searchCache ||
+            searchCache.query !== query ||
+            searchCache.openNow !== openNow ||
+            now() - searchCache.at > 300000 ||
+            destination(origin, searchCache.origin).distance > 100
+          ) {
+            const results = await provider.search(query, origin, openNow, signal, { preferences });
+            if (signal.aborted) throw new Error('Wyszukiwanie przerwane.');
+            places = results;
+            searchCache = { query, openNow, origin, at: now() };
+          }
+          return view();
+        }
+        let route = command.routeId
+          ? routes.find((item) => item.id === command.routeId)
+          : selected();
+        if (command.routeId && !route) throw new Error('Nie znalazłem zapisanej trasy.');
+        if (command.action === 'start') {
+          const origin = requireFix();
+          const place =
+            command.placeId === TENDUR_KEBAB.id
+              ? {
+                  id: TENDUR_KEBAB.id,
+                  name: TENDUR_KEBAB.title,
+                  address: '',
+                  location: TENDUR_KEBAB,
+                }
+              : places.find((item) => item.id === command.placeId);
+          if (!place)
+            throw new Error(
+              'Najpierw wyszukaj miejsce. Wybierz identyfikator z wyników, nie wymyślaj adresu.',
+            );
+          route = routes.findLast(
+            (item) => item.place.id === place.id && item.status !== 'arrived',
           );
-        route = routes.findLast((item) => item.place.id === place.id && item.status !== 'arrived');
-        if (!route) {
-          const walking = await provider.route(origin, place, signal, { preferences });
+          if (!route) {
+            const walking = await provider.route(origin, place, signal, { preferences });
+            if (signal.aborted) throw new Error('Wyznaczanie trasy przerwane.');
+            route = {
+              ...walking,
+              id: `route-${++sequence}`,
+              place,
+              createdAt: now(),
+              step: 0,
+              preferences: [...preferences],
+              status: 'paused',
+            };
+            routes = [...routes, route];
+          }
+        }
+        if (command.action === 'status') return view();
+        if (!route) throw new Error('Nie ma jeszcze zapisanej trasy. Najpierw ustal cel.');
+        if (command.action === 'replan') {
+          const origin = requireFix();
+          if (route.status === 'arrived') return view();
+          // GPS jitter, a new question or a pause never justify another paid route request.
+          if (route.id !== selectedId || now() - lastReplanAt < 60000) return view();
+          if (remainingDistance(route) <= 40 || !offRoute) return view();
+          lastReplanAt = now();
+          const walking = await provider.route(origin, route.place, signal, {
+            preferences: route.preferences ?? preferences,
+          });
           if (signal.aborted) throw new Error('Wyznaczanie trasy przerwane.');
-          route = {
+          const updated: SavedRoute = {
             ...walking,
             id: `route-${++sequence}`,
-            place,
+            place: route.place,
             createdAt: now(),
             step: 0,
-            preferences: [...preferences],
+            preferences: [...(route.preferences ?? preferences)],
             status: 'paused',
           };
-          routes = [...routes, route];
+          routes = [...routes, updated];
+          route = updated;
         }
-      }
-      if (command.action === 'status') return view();
-      if (!route) throw new Error('Nie ma jeszcze zapisanej trasy. Najpierw ustal cel.');
-      if (command.action === 'replan') {
-        const origin = requireFix();
-        if (route.status === 'arrived') return view();
-        // GPS jitter, a new question or a pause never justify another paid route request.
-        if (route.id !== selectedId || now() - lastReplanAt < 60000) return view();
-        if (remainingDistance(route) <= 40 || !offRoute) return view();
-        lastReplanAt = now();
-        const walking = await provider.route(origin, route.place, signal, {
-          preferences: route.preferences ?? preferences,
-        });
-        if (signal.aborted) throw new Error('Wyznaczanie trasy przerwane.');
-        const updated: SavedRoute = {
-          ...walking,
-          id: `route-${++sequence}`,
-          place: route.place,
-          createdAt: now(),
-          step: 0,
-          preferences: [...(route.preferences ?? preferences)],
-          status: 'paused',
-        };
-        routes = [...routes, updated];
-        route = updated;
-      }
-      if (command.action === 'pause') {
-        route.status = 'paused';
-        return view();
-      }
-      if (command.action === 'next') {
+        if (command.action === 'pause') {
+          route.status = 'paused';
+          return view();
+        }
+        if (command.action === 'next') {
+          requireFix();
+          if (route.status !== 'active')
+            throw new Error(
+              'Ta trasa jest wstrzymana lub zakończona. Wznów ją przed dalszą drogą.',
+            );
+          if (offRoute) return view();
+          // Only the user's request advances a step, and only when GPS places them near its end.
+          const distanceToEnd = stepEndDistance(route);
+          const reached = distanceToEnd !== null && distanceToEnd <= 25;
+          if (reached) {
+            if (route.step < route.steps.length - 1) route.step++;
+            else route.status = 'arrived';
+            reachedStep = null;
+          }
+          return view();
+        }
         requireFix();
-        if (route.status !== 'active')
-          throw new Error('Ta trasa jest wstrzymana lub zakończona. Wznów ją przed dalszą drogą.');
-        if (offRoute) return view();
-        // Only the user's request advances a step, and only when GPS places them near its end.
-        const distanceToEnd = stepEndDistance(route);
-        const reached = distanceToEnd !== null && distanceToEnd <= 25;
-        if (reached) {
-          if (route.step < route.steps.length - 1) route.step++;
-          else route.status = 'arrived';
-          reachedStep = null;
+        if (selectedId !== route.id) {
+          const previous = selected();
+          if (previous?.status === 'active') previous.status = 'paused';
+          selectedId = route.id;
+          resetCheck();
+        }
+        suspended = false;
+        directionTarget = null;
+        if (route.status !== 'arrived') route.status = 'active';
+        // A resumed route far from the user is retained, but cannot issue directions until checked.
+        if (remainingDistance(route) > 40) {
+          offRoute = true;
+          offSince = fix!.timestamp;
+          offSamples = 3;
         }
         return view();
+      } finally {
+        callerSignal.removeEventListener('abort', abort);
+        requests.delete(request);
       }
-      requireFix();
-      if (selectedId !== route.id) {
-        const previous = selected();
-        if (previous?.status === 'active') previous.status = 'paused';
-        selectedId = route.id;
-        resetCheck();
-      }
-      directionTarget = null;
-      if (route.status !== 'arrived') route.status = 'active';
-      // A resumed route far from the user is retained, but cannot issue directions until checked.
-      if (remainingDistance(route) > 40) {
-        offRoute = true;
-        offSince = fix!.timestamp;
-        offSamples = 3;
-      }
-      return view();
     },
   };
 }

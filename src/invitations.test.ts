@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { createTripleTap, randomInvitation } from '@/src/invitations';
+import { createTripleTap, getInvitationDestination, randomInvitation } from '@/src/invitations';
 
 describe('invitation trigger', () => {
   it('requires three taps within 1.2 seconds and starts counting again after firing', () => {
@@ -22,7 +22,7 @@ describe('invitation trigger', () => {
   });
 
   it('generates invitations addressed to Jadwiga from both friends, with the expected places', () => {
-    const notifications = [0, 0.25, 0.5, 0.999].map((value) => randomInvitation(() => value, 123));
+    const notifications = [0, 0.2, 0.4, 0.6].map((value) => randomInvitation(() => value, 123));
     assert.deepEqual(
       notifications.map((item) => item.sender),
       ['Basia', 'Basia', 'Danka', 'Danka'],
@@ -36,5 +36,16 @@ describe('invitation trigger', () => {
       );
       if (notification.sender === 'Danka') assert.match(notification.text, /bloku/);
     }
+  });
+
+  it('includes a visit from Maria with Kajetan without setting a navigation destination', () => {
+    const notification = randomInvitation(() => 0.999, 456);
+    assert.equal(notification.sender, 'Maria');
+    assert.equal(notification.createdAt, 456);
+    assert.match(notification.text, /odwiedzić/);
+    assert.match(notification.text, /wnuczkiem Kajetanem/);
+    assert.equal(getInvitationDestination(notification), null);
+    assert.equal(getInvitationDestination(randomInvitation(() => 0, 456))!.id, 'basia-park');
+    assert.equal(getInvitationDestination(randomInvitation(() => 0.5, 456))!.id, 'danka-home');
   });
 });
