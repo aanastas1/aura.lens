@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.expo/
+android/
+ios/
+*.apk
+*.aab
+dist/
+.next/
+test-results/
+playwright-report/
+data/.refresh/
