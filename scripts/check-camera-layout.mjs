@@ -86,6 +86,9 @@ mock.module('react-native', () => ({
   StyleSheet: { create: (styles) => styles, absoluteFill, absoluteFillObject: absoluteFill },
 }));
 mock.module('expo-camera', () => ({ CameraView: 'CameraView' }));
+mock.module('react-native-view-shot', () => ({
+  captureRef: async () => 'data:image/jpeg;base64,fixture',
+}));
 const locationWatchers = [];
 let cachedLocation = null;
 mock.module('expo-location', () => ({

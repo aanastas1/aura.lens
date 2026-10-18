@@ -12,6 +12,7 @@ import {
   TurboModuleRegistry,
   View,
 } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
 import { type AssistantPhoto, assistantConversation } from '@/src/assistant';
 import { TENDUR_KEBAB } from '@/src/banners';
 import { GpsPosition } from '@/src/gpsPosition';
@@ -389,7 +390,6 @@ export function CameraSession({ restart }: { restart: () => void }) {
   const finishSnapshot = async (scene: SceneSnapshot) => {
     if (pendingSnapshot.current !== scene || !sceneView.current) return;
     try {
-      const { captureRef } = await import('react-native-view-shot');
       const scale = 1280 / Math.max(viewport.width, viewport.height);
       const width = Math.max(1, Math.round(viewport.width * scale));
       const height = Math.max(1, Math.round(viewport.height * scale));
