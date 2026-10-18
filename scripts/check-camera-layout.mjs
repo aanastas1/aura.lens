@@ -86,7 +86,24 @@ mock.module('react-native', () => ({
   StyleSheet: { create: (styles) => styles, absoluteFill, absoluteFillObject: absoluteFill },
 }));
 mock.module('expo-camera', () => ({ CameraView: 'CameraView' }));
-mock.module('expo-location', () => ({}));
+const locationWatchers = [];
+let cachedLocation = null;
+mock.module('expo-location', () => ({
+  Accuracy: { Highest: 6 },
+  getLastKnownPositionAsync: async () => cachedLocation,
+  watchPositionAsync: async (_options, onLocation, onError) => {
+    const watcher = {
+      onLocation,
+      onError,
+      removed: false,
+      remove() {
+        this.removed = true;
+      },
+    };
+    locationWatchers.push(watcher);
+    return watcher;
+  },
+}));
 mock.module('expo-sensors', () => ({ Accelerometer: {}, Magnetometer: {} }));
 mock.module('@/src/VoiceAssistant', () => ({ VoiceAssistant: 'VoiceAssistant' }));
 const { createNavigation } = await import('@/src/navigation');
@@ -259,6 +276,50 @@ const scenarios = [
   ['long notification', 'Jadwigo, chcę Cię odwiedzić z Kajetanem. '.repeat(5)],
 ];
 const errors = [];
+cachedLocation = { coords: { ...routeOrigin, accuracy: 80 }, timestamp: Date.now() - 2000 };
+sessionEffects = [];
+layout(null, false, 412, 892);
+const actualSetTimeout = globalThis.setTimeout;
+const actualClearTimeout = globalThis.clearTimeout;
+let retry;
+globalThis.setTimeout = (callback, delay) => {
+  retry = { callback, delay };
+  return 1;
+};
+globalThis.clearTimeout = () => {};
+const stopGps = sessionEffects.at(-2)();
+await Promise.resolve();
+assert.equal(
+  navigation.context().location.accuracy,
+  80,
+  'Use the cached coarse location before live GPS starts',
+);
+locationWatchers[0].onError();
+assert.equal(retry.delay, 3000, 'Location errors must schedule a new attempt');
+retry.callback();
+await Promise.resolve();
+assert.equal(locationWatchers.length, 2, 'Retry must actually restart the native location watcher');
+assert.equal(locationWatchers[0].removed, true);
+locationWatchers[1].onLocation({
+  coords: { ...routeOrigin, accuracy: 60 },
+  timestamp: Date.now() - 1000,
+});
+assert.equal(
+  navigation.context().location.accuracy,
+  60,
+  'Keep consuming coarse live location updates',
+);
+stopGps();
+const stoppedFix = navigation.context().location;
+locationWatchers[1].onLocation({ coords: { ...routeOrigin, accuracy: 40 }, timestamp: Date.now() });
+assert.deepEqual(
+  navigation.context().location,
+  stoppedFix,
+  'Unmounting must ignore late native callbacks',
+);
+assert.equal(locationWatchers[1].removed, true);
+globalThis.setTimeout = actualSetTimeout;
+globalThis.clearTimeout = actualClearTimeout;
 navigation.updateLocation({ ...routeOrigin, accuracy: 4, timestamp: navigationClock });
 await navigation.execute({ action: 'search', query: 'Cefarm' }, new AbortController().signal);
 await navigation.execute({ action: 'start', placeId: cefarm.id }, new AbortController().signal);
@@ -281,6 +342,7 @@ assert.ok(
 navigationClock += 6000;
 liveGpsAge = 6000;
 for (const hasPreviousFix of [true, false]) {
+  if (!hasPreviousFix) navigationClock += 60000;
   liveGpsAvailable = hasPreviousFix;
   sessionEffects = [];
   layout(null, false, 412, 892);
@@ -295,8 +357,27 @@ for (const hasPreviousFix of [true, false]) {
   );
   assert.equal(renderedDisplay.panels[0].stale, true);
   assert.equal(renderedDisplay.panels[0].pending, !hasPreviousFix);
-  assert.match(renderedDisplay.message, /GPS/, 'Stale route directions must have a GPS warning');
+  assert.match(
+    renderedDisplay.message,
+    /GPS|przybliżona/,
+    'Stale route directions must report their location quality',
+  );
 }
+navigationClock += 1000;
+navigation.updateLocation({ ...routeOrigin, accuracy: 80, timestamp: navigationClock });
+sessionEffects = [];
+layout(null, false, 412, 892);
+const stopApproximateAnimation = sessionEffects.at(-1)();
+nextFrame(100);
+stopApproximateAnimation();
+assert.equal(renderedDisplay.target.name, 'Cefarm');
+assert.equal(
+  renderedDisplay.panels[0].pending,
+  false,
+  'Coarse location must orient a real arrow even before the first precise fix',
+);
+assert.ok(Math.abs(renderedDisplay.panels[0].relativeBearing) < 1);
+assert.match(renderedDisplay.message, /przybliżona/);
 navigation.stopAll();
 sessionEffects = [];
 layout(null, false, 412, 892);

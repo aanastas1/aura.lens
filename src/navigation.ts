@@ -5,6 +5,7 @@ import {
   type Fix,
   localOffset,
   reliableFix,
+  usableFix,
 } from '@/src/positioning';
 
 export type MapSource = { title: string; uri: string; placeId?: string };
@@ -133,10 +134,12 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
     offRoute = false;
     reachedStep = null;
   };
-  const requireFix = () => {
-    if (!fresh())
+  const requireFix = (precise = true) => {
+    if (precise ? !fresh() : !fix || !usableFix(fix, now()))
       throw new Error(
-        'Nie mam dokładnej, aktualnej lokalizacji. Zatrzymaj się w bezpiecznym miejscu i poczekaj na GPS.',
+        precise
+          ? 'Strzałka pokazuje orientacyjny kierunek. Nie mogę jeszcze potwierdzić końca tego odcinka.'
+          : 'Ustalam Twoje położenie, żeby wyznaczyć kierunek do celu.',
       );
     return fix!;
   };
@@ -149,6 +152,7 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
       rearCameraHeading: heading && now() - heading.timestamp <= 2000 ? heading.degrees : null,
       location: fix,
       locationCurrent: fresh(),
+      locationApproximate: !!fix && usableFix(fix, now()) && !fresh(),
       offRoute,
       suspended,
       directionTarget,
@@ -207,6 +211,7 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
       const route = selected();
       return {
         directionTarget: directionTarget ?? route?.place ?? null,
+        approximateLocation: fix && usableFix(fix, now()) ? fix : null,
         waypoint:
           route && fix ? directionAlongPath(fix, route.steps[route.step]!.path, null).target : null,
         followingRoute: !!route,
@@ -219,7 +224,10 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
       if (!route) return '';
       if (route.status === 'paused') return `Droga do: ${route.place.name}. Wstrzymana.`;
       if (route.status === 'arrived') return `Jesteś w okolicy: ${route.place.name}.`;
-      if (!fresh()) return 'Czekam na dokładny GPS. Zatrzymaj się w bezpiecznym miejscu.';
+      if (!fresh())
+        return fix && usableFix(fix, now())
+          ? `Cel: ${route.place.name}. Lokalizacja przybliżona (±${Math.round(fix.accuracy!)} m).`
+          : 'Czekam na dokładny GPS. Zatrzymaj się w bezpiecznym miejscu.';
       if (offRoute) return 'Sprawdźmy drogę. Zatrzymaj się w bezpiecznym miejscu.';
       return `Cel: ${route.place.name}. Powiedz: „Co dalej?”`;
     },
@@ -264,10 +272,9 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
       }
       if (now() - lastReminder < 60000) return null;
       let message: string | null = null;
-      if (!fresh())
-        message =
-          'Nie mam aktualnego, dokładnego GPS. Zatrzymaj się w bezpiecznym miejscu i poczekaj na sygnał.';
-      else if (offRoute)
+      // Location quality belongs in the HUD; do not announce GPS warnings.
+      if (!fresh()) return null;
+      if (offRoute)
         message =
           'Wygląda na to, że jesteś poza zapisaną drogą. Zatrzymaj się w bezpiecznym miejscu i powiedz: „Sprawdź drogę”.';
       else if (
@@ -313,7 +320,7 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
           preferences = next;
         }
         if (command.action === 'search') {
-          const origin = requireFix();
+          const origin = requireFix(false);
           const query = command.query?.trim();
           if (!query) throw new Error('Podaj nazwę miejsca lub adres.');
           const openNow = command.openNow ?? false;
@@ -336,7 +343,7 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
           : selected();
         if (command.routeId && !route) throw new Error('Nie znalazłem zapisanej trasy.');
         if (command.action === 'start') {
-          const origin = requireFix();
+          const origin = requireFix(false);
           const place =
             command.placeId === TENDUR_KEBAB.id
               ? {
@@ -414,7 +421,7 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
           }
           return view();
         }
-        requireFix();
+        requireFix(command.action !== 'start');
         if (selectedId !== route.id) {
           const previous = selected();
           if (previous?.status === 'active') previous.status = 'paused';

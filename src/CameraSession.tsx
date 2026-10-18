@@ -32,6 +32,7 @@ import {
   reliableFix,
   smoothHeading,
   smoothSensor,
+  usableFix,
   type Vec3,
   waypointHud,
 } from '@/src/positioning';
@@ -219,38 +220,58 @@ export function CameraSession({ restart }: { restart: () => void }) {
   useEffect(() => {
     let disposed = false;
     let subscription: Location.LocationSubscription | undefined;
-    void Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.Highest,
-        timeInterval: 1000,
-        distanceInterval: 0,
-      },
-      (location) => {
-        if (disposed) return;
-        setGpsError('');
-        const fix = { ...location.coords, timestamp: location.timestamp };
-        model.current.position.observeGps(fix, Date.now());
-        // Reject GPS teleports using the existing filter; expose poor accuracy rather than hiding it.
-        if (
-          model.current.position.latestFix?.timestamp === fix.timestamp ||
-          !reliableFix(fix, Date.now())
-        ) {
-          conversation.navigation.updateLocation(fix);
-        }
-      },
-      () => {
-        if (!disposed) setGpsError('Nie mam sygnału GPS. Włącz lokalizację i wyjdź na zewnątrz.');
-      },
-    )
-      .then((value) => {
-        if (disposed) value.remove();
-        else subscription = value;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let generation = 0;
+    const observe = (location: Location.LocationObject) => {
+      if (disposed) return;
+      const now = Date.now();
+      const fix = { ...location.coords, timestamp: location.timestamp };
+      if (!usableFix(fix, now)) return;
+      model.current.position.observeGps(fix, now);
+      if (model.current.position.latestFix?.timestamp === fix.timestamp || !reliableFix(fix, now)) {
+        conversation.navigation.updateLocation(fix);
+      }
+    };
+    const startWatching = () => {
+      const attempt = ++generation;
+      const retry = () => {
+        if (disposed || generation !== attempt) return;
+        generation++;
+        setGpsError('Szukam lokalizacji. Ponawiam odczyt GPS.');
+        retryTimer = setTimeout(() => {
+          subscription?.remove();
+          subscription = undefined;
+          startWatching();
+        }, 3000);
+      };
+      void Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Highest,
+          timeInterval: 1000,
+          distanceInterval: 0,
+        },
+        (location) => {
+          if (disposed || generation !== attempt) return;
+          setGpsError('');
+          observe(location);
+        },
+        retry,
+      )
+        .then((value) => {
+          if (disposed || generation !== attempt) value.remove();
+          else subscription = value;
+        })
+        .catch(retry);
+    };
+    void Location.getLastKnownPositionAsync({ maxAge: 60000 })
+      .then((location) => {
+        if (location) observe(location);
       })
-      .catch(() => {
-        if (!disposed) setGpsError('Nie mam sygnału GPS. Włącz lokalizację i wyjdź na zewnątrz.');
-      });
+      .catch(() => {});
+    startWatching();
     return () => {
       disposed = true;
+      clearTimeout(retryTimer);
       subscription?.remove();
     };
   }, [conversation]);
@@ -303,15 +324,22 @@ export function CameraSession({ restart }: { restart: () => void }) {
         else if (!cameraReady) message = 'Włączam aparat. Chwileczkę.';
         else if (!sensorsReady) message = 'Szukam kierunku. Trzymaj telefon przed sobą.';
         else if (!basis) message = 'Trzymaj telefon spokojnie.';
-        else if (!gpsReady) message = gpsError || 'Szukam sygnału GPS. Wyjdź na zewnątrz.';
         const navigationState = conversation.navigation.hudState();
+        const hudCoordinate = gpsReady
+          ? coordinate
+          : (navigationState.approximateLocation ?? coordinate);
+        if (!message && !gpsReady) {
+          message = navigationState.approximateLocation
+            ? `Lokalizacja przybliżona (±${Math.round(navigationState.approximateLocation.accuracy!)} m).`
+            : gpsError || 'Szukam sygnału GPS. Wyjdź na zewnątrz.';
+        }
         const target = navigationState.directionTarget ?? DEFAULT_TARGET;
         const followingRoute = navigationState.followingRoute;
         const projected = navigationState.suspended
           ? null
           : waypointHud(
               {
-                coordinate,
+                coordinate: hudCoordinate,
                 heading: state.heading,
                 current: cameraReady && gpsReady && !!basis && !error,
               },
@@ -319,8 +347,8 @@ export function CameraSession({ restart }: { restart: () => void }) {
               viewport.width,
               viewport.height,
             );
-        if (projected && coordinate && followingRoute && !projected.pending) {
-          projected.distance = destination(coordinate, target.location).distance;
+        if (projected && hudCoordinate && followingRoute && !projected.pending) {
+          projected.distance = destination(hudCoordinate, target.location).distance;
         }
         setDisplay({
           target,

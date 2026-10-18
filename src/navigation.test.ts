@@ -80,6 +80,26 @@ function setup() {
 }
 
 describe('remembered conversational walking route', () => {
+  it('can select another destination with approximate GPS without allowing precise step advancement', async () => {
+    const s = setup();
+    s.locate(0, 0, 80);
+    const state = await s.start();
+    assert.equal(state.currentRoute!.destination.id, place.id);
+    assert.equal(state.locationCurrent, false);
+    assert.equal(s.navigation.hudState().directionTarget!.id, place.id);
+    assert.match(s.navigation.displayStatus(), /przybliżona/);
+    assert.equal(
+      s.navigation.reminder(),
+      null,
+      'Approximate positioning must not produce spoken GPS warnings',
+    );
+    await assert.rejects(
+      s.navigation.execute({ action: 'next' }, signal()),
+      /orientacyjny kierunek/,
+    );
+    s.locate();
+    assert.equal(s.navigation.context().locationCurrent, true);
+  });
   it('retains progress and reuses the same route through questions, pauses and resumes', async () => {
     const s = setup();
     const first = await s.start();
@@ -219,12 +239,22 @@ describe('remembered conversational walking route', () => {
     s.locate(50);
     assert.equal(s.navigation.context().offRoute, false);
     s.locate(100, 0, 100);
-    await assert.rejects(s.navigation.execute({ action: 'next' }, signal()), /lokalizacji/);
+    await assert.rejects(
+      s.navigation.execute({ action: 'next' }, signal()),
+      /orientacyjny kierunek/,
+    );
     s.locate(100);
     s.advance(6000);
     assert.equal(s.navigation.context().locationCurrent, false);
-    assert.match(s.navigation.reminder()!, /GPS/);
-    await assert.rejects(s.navigation.execute({ action: 'resume' }, signal()), /lokalizacji/);
+    assert.equal(
+      s.navigation.reminder(),
+      null,
+      'Stale positioning must not produce spoken GPS warnings',
+    );
+    await assert.rejects(
+      s.navigation.execute({ action: 'resume' }, signal()),
+      /orientacyjny kierunek/,
+    );
     assert.equal(s.counts().routeCalls, 1);
   });
 
@@ -360,6 +390,7 @@ describe('help stops all navigation', () => {
     assert.ok(stopped.savedRoutes.every((route) => route.status === 'paused'));
     assert.deepEqual(s.navigation.hudState(), {
       directionTarget: null,
+      approximateLocation: stopped.location,
       waypoint: null,
       followingRoute: false,
       suspended: true,

@@ -41,6 +41,21 @@ export function reliableFix(fix: Fix, now: number): boolean {
   );
 }
 
+// Coarse, recent Android locations can still orient the destination marker.
+export function usableFix(fix: Fix, now: number): boolean {
+  return (
+    Number.isFinite(fix.latitude) &&
+    Math.abs(fix.latitude) <= 90 &&
+    Number.isFinite(fix.longitude) &&
+    Math.abs(fix.longitude) <= 180 &&
+    fix.accuracy !== null &&
+    Number.isFinite(fix.accuracy) &&
+    fix.accuracy >= 0 &&
+    now - fix.timestamp >= -1000 &&
+    now - fix.timestamp <= 60000
+  );
+}
+
 const cross = (a: Vec3, b: Vec3): Vec3 => [
   a[1] * b[2] - a[2] * b[1],
   a[2] * b[0] - a[0] * b[2],
