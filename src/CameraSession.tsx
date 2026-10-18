@@ -26,6 +26,7 @@ import {
   type CameraBasis,
   cameraHeading,
   compassCameraBasis,
+  destination,
   MARKER_DIMENSIONS,
   medianHeading,
   reliableFix,
@@ -306,19 +307,21 @@ export function CameraSession({ restart }: { restart: () => void }) {
         const navigationState = conversation.navigation.hudState();
         const target = navigationState.directionTarget ?? DEFAULT_TARGET;
         const followingRoute = navigationState.followingRoute;
-        const projected =
-          followingRoute || navigationState.suspended
-            ? null
-            : waypointHud(
-                {
-                  coordinate,
-                  heading: state.heading,
-                  current: cameraReady && gpsReady && !!basis && !error,
-                },
-                target.location,
-                viewport.width,
-                viewport.height,
-              );
+        const projected = navigationState.suspended
+          ? null
+          : waypointHud(
+              {
+                coordinate,
+                heading: state.heading,
+                current: cameraReady && gpsReady && !!basis && !error,
+              },
+              navigationState.waypoint ?? target.location,
+              viewport.width,
+              viewport.height,
+            );
+        if (projected && coordinate && followingRoute && !projected.pending) {
+          projected.distance = destination(coordinate, target.location).distance;
+        }
         setDisplay({
           target,
           panels: projected ? [projected] : [],

@@ -12,11 +12,42 @@ let statusMessage = null;
 let notification = null;
 let frozenFrame = null;
 let viewport = { width: 412, height: 700 };
+let liveSample = false;
+let liveGpsAge = 0;
+let liveGpsAvailable = true;
+let sessionEffects = [];
+let renderedDisplay;
+let nextFrame;
+const routeOrigin = { latitude: 52.2, longitude: 21 };
+globalThis.requestAnimationFrame = (callback) => {
+  nextFrame = callback;
+  return 1;
+};
+globalThis.cancelAnimationFrame = () => {};
 mock.module('react', () => ({
   ...react,
   useCallback: (fn) => fn,
-  useEffect: () => {},
-  useRef: (current) => ({ current }),
+  useEffect: (effect) => {
+    sessionEffects.push(effect);
+  },
+  useRef: (current) => {
+    if (liveSample && current?.position) {
+      const now = Date.now();
+      if (liveGpsAvailable)
+        current.position.observeGps(
+          { ...routeOrigin, accuracy: 4, timestamp: now - liveGpsAge },
+          now - liveGpsAge,
+        );
+      Object.assign(current, {
+        gravity: [0, 1, 0],
+        magnetic: [0, -45, -20],
+        declination: 0,
+        gravityTimestamp: now,
+        magneticTimestamp: now,
+      });
+    }
+    return { current };
+  },
   useState: (initial) => {
     const index = stateIndex++;
     const value = typeof initial === 'function' ? initial() : initial;
@@ -25,17 +56,21 @@ mock.module('react', () => ({
         ? notification
         : index === 4
           ? viewport
-          : index === 6
-            ? frozenFrame
-            : index === 9 && statusMessage
-              ? {
-                  ...value,
-                  ...(typeof statusMessage === 'string'
-                    ? { message: statusMessage }
-                    : statusMessage),
-                }
-              : value,
-      () => {},
+          : index === 5 && liveSample
+            ? true
+            : index === 6
+              ? frozenFrame
+              : index === 9 && statusMessage
+                ? {
+                    ...value,
+                    ...(typeof statusMessage === 'string'
+                      ? { message: statusMessage }
+                      : statusMessage),
+                  }
+                : value,
+      (next) => {
+        if (index === 9) renderedDisplay = next;
+      },
     ];
   },
 }));
@@ -54,6 +89,34 @@ mock.module('expo-camera', () => ({ CameraView: 'CameraView' }));
 mock.module('expo-location', () => ({}));
 mock.module('expo-sensors', () => ({ Accelerometer: {}, Magnetometer: {} }));
 mock.module('@/src/VoiceAssistant', () => ({ VoiceAssistant: 'VoiceAssistant' }));
+const { createNavigation } = await import('@/src/navigation');
+const cefarm = {
+  id: 'cefarm',
+  name: 'Cefarm',
+  address: '',
+  location: { latitude: 52.2, longitude: 21.003 },
+};
+const bend = { latitude: 52.201, longitude: 21 };
+let navigationClock = Date.now();
+const navigation = createNavigation(
+  {
+    search: async () => [cefarm],
+    route: async () => ({
+      steps: [
+        {
+          instruction: 'Idź na północ, potem skręć w prawo.',
+          distance: 300,
+          path: [routeOrigin, bend, cefarm.location],
+        },
+      ],
+      distance: 300,
+      durationSeconds: 240,
+      warnings: [],
+    }),
+  },
+  () => navigationClock,
+);
+mock.module('@/src/assistant', () => ({ assistantConversation: { navigation } }));
 const { CameraSession } = await import('@/src/CameraSession');
 const { waypointHud } = await import('@/src/positioning');
 const { TENDUR_KEBAB } = await import('@/src/banners');
@@ -196,6 +259,52 @@ const scenarios = [
   ['long notification', 'Jadwigo, chcę Cię odwiedzić z Kajetanem. '.repeat(5)],
 ];
 const errors = [];
+navigation.updateLocation({ ...routeOrigin, accuracy: 4, timestamp: navigationClock });
+await navigation.execute({ action: 'search', query: 'Cefarm' }, new AbortController().signal);
+await navigation.execute({ action: 'start', placeId: cefarm.id }, new AbortController().signal);
+liveSample = true;
+sessionEffects = [];
+layout(null, false, 412, 892);
+const stopAnimation = sessionEffects.at(-1)();
+nextFrame(100);
+stopAnimation();
+assert.equal(
+  renderedDisplay.target.name,
+  'Cefarm',
+  'An active route must show its selected destination instead of Tendur',
+);
+assert.equal(renderedDisplay.panels.length, 1, 'An active route must show a direction arrow');
+assert.ok(
+  Math.abs(renderedDisplay.panels[0].relativeBearing) < 1,
+  'The arrow must follow the northward street segment, rather than point east directly at Cefarm',
+);
+navigationClock += 6000;
+liveGpsAge = 6000;
+for (const hasPreviousFix of [true, false]) {
+  liveGpsAvailable = hasPreviousFix;
+  sessionEffects = [];
+  layout(null, false, 412, 892);
+  const stopWaitingAnimation = sessionEffects.at(-1)();
+  nextFrame(100);
+  stopWaitingAnimation();
+  assert.equal(renderedDisplay.target.name, 'Cefarm');
+  assert.equal(
+    renderedDisplay.panels.length,
+    1,
+    'An active route must retain its marker while GPS is unavailable',
+  );
+  assert.equal(renderedDisplay.panels[0].stale, true);
+  assert.equal(renderedDisplay.panels[0].pending, !hasPreviousFix);
+  assert.match(renderedDisplay.message, /GPS/, 'Stale route directions must have a GPS warning');
+}
+navigation.stopAll();
+sessionEffects = [];
+layout(null, false, 412, 892);
+const stopSuspendedAnimation = sessionEffects.at(-1)();
+nextFrame(100);
+stopSuspendedAnimation();
+assert.equal(renderedDisplay.panels.length, 0, 'SOS must still hide navigation arrows');
+liveSample = false;
 const lastDirection = waypointHud(
   { coordinate: { latitude: 52.23, longitude: 21.01 }, heading: 90, current: false },
   TENDUR_KEBAB,

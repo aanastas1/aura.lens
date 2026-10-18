@@ -203,7 +203,16 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
       directionTarget = place;
       resetCheck();
     },
-    hudState: () => ({ directionTarget, followingRoute: !!selected(), suspended }),
+    hudState: () => {
+      const route = selected();
+      return {
+        directionTarget: directionTarget ?? route?.place ?? null,
+        waypoint:
+          route && fix ? directionAlongPath(fix, route.steps[route.step]!.path, null).target : null,
+        followingRoute: !!route,
+        suspended,
+      };
+    },
     displayStatus() {
       if (suspended) return 'Nawigacja wstrzymana. Możesz poprosić o wznowienie drogi.';
       const route = selected();

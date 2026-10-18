@@ -360,6 +360,7 @@ describe('help stops all navigation', () => {
     assert.ok(stopped.savedRoutes.every((route) => route.status === 'paused'));
     assert.deepEqual(s.navigation.hudState(), {
       directionTarget: null,
+      waypoint: null,
       followingRoute: false,
       suspended: true,
     });
