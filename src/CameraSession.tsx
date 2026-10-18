@@ -411,7 +411,8 @@ export function CameraSession({ restart }: { restart: () => void }) {
   const panel = display.panels[0];
   const known = panel?.distance != null;
   const distance = known ? distanceParts(panel!.distance!) : null;
-  const instruction = known && !display.message ? turn(panel!) : null;
+  const direction = panel ? turn(panel) : null;
+  const instruction = known && !panel!.stale && !display.message ? direction : null;
   const failed = !!error || !!gpsError;
   const spoken = instruction
     ? `${instruction.text}. ${formatDistance(panel!.distance!)} do celu: ${display.target.name}.`
@@ -427,7 +428,7 @@ export function CameraSession({ restart }: { restart: () => void }) {
           accessibilityLabel={spoken}
           style={styles.instructionRow}
         >
-          {instruction && <Text style={styles.glyph}>{instruction.glyph}</Text>}
+          {direction && <Text style={styles.glyph}>{direction.glyph}</Text>}
           <View style={styles.instructionText}>
             <Text style={instruction ? styles.instruction : styles.message}>
               {instruction ? instruction.text : display.message}

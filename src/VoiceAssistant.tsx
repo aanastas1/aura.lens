@@ -72,6 +72,7 @@ export function VoiceAssistant({
     photo: null as Promise<CaptureResult> | null,
     request: null as AbortController | null,
     stopTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+    speechId: 0,
   });
   const { height } = useWindowDimensions();
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -148,21 +149,22 @@ export function VoiceAssistant({
       if (s.disposed || request.signal.aborted) return;
       refreshMapSources();
       transition('speaking');
+      const speechId = ++s.speechId;
       Speech.speak(response, {
         language: 'pl-PL',
         rate: 0.85,
         onDone: () => {
-          if (s.disposed) return;
+          if (s.disposed || s.speechId !== speechId) return;
           setAnswer('');
           setTranscript('');
           setMapSources([]);
           transition('idle');
         },
         onStopped: () => {
-          if (!s.disposed) transition('idle');
+          if (!s.disposed && s.speechId === speechId) transition('idle');
         },
         onError: () => {
-          if (s.disposed) return;
+          if (s.disposed || s.speechId !== speechId) return;
           setError(
             'Nie mogę przeczytać odpowiedzi na głos. Włącz „Syntezator mowy Google” w ustawieniach telefonu.',
           );
@@ -270,21 +272,22 @@ export function VoiceAssistant({
       setTranscript('');
       refreshMapSources();
       transition('speaking');
+      const speechId = ++s.speechId;
       Speech.speak(message, {
         language: 'pl-PL',
         rate: 0.85,
         onDone: () => {
-          if (s.disposed) return;
+          if (s.disposed || s.speechId !== speechId) return;
           setAnswer('');
           setTranscript('');
           setMapSources([]);
           transition('idle');
         },
         onStopped: () => {
-          if (!s.disposed) transition('idle');
+          if (!s.disposed && s.speechId === speechId) transition('idle');
         },
         onError: () => {
-          if (!s.disposed) transition('idle');
+          if (!s.disposed && s.speechId === speechId) transition('idle');
         },
       });
     }, 5000);
@@ -377,14 +380,31 @@ export function VoiceAssistant({
   const busy = ['stopping', 'answering', 'speaking', 'announcing'].includes(phase);
   const iconColor = listening ? colors.white : colors.navy;
   const showCard = !!transcript || !!answer || !!error;
+  const dismissSpeech = () => {
+    const s = state.current;
+    if (s.phase !== 'speaking') return;
+    s.speechId++;
+    void Speech.stop().catch(() => {});
+    setAnswer('');
+    setTranscript('');
+    setError('');
+    setMapSources([]);
+    transition('idle');
+  };
   return (
     <View pointerEvents="box-none" style={styles.overlay}>
       {showCard && (
-        <View style={[styles.card, !!error && styles.cardError]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Przerwij czytanie i zamknij dymek"
+          disabled={phase !== 'speaking'}
+          onPress={dismissSpeech}
+          style={[styles.card, !!error && styles.cardError]}
+        >
           <ScrollView style={{ maxHeight: height * 0.4 }}>
             {!!transcript && <Text style={styles.question}>Pytasz: {transcript}</Text>}
             {!!answer && (
-              <Text accessibilityLiveRegion="polite" selectable style={styles.answer}>
+              <Text accessibilityLiveRegion="polite" style={styles.answer}>
                 {answer}
               </Text>
             )}
@@ -414,7 +434,7 @@ export function VoiceAssistant({
               </Text>
             )}
           </ScrollView>
-        </View>
+        </Pressable>
       )}
       <View pointerEvents="box-none" style={styles.buttonWrap}>
         {listening && !reduceMotion && (

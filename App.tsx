@@ -43,10 +43,8 @@ export default function App() {
         throw new Error('Ta aplikacja działa tylko na telefonach z Androidem.');
       const camera = await requestCameraPermission();
       if (!camera.granted) throw new Error('Zezwól na aparat w ustawieniach telefonu.');
-      const location = await Location.requestForegroundPermissionsAsync();
-      if (!location.granted) throw new Error('Zezwól na lokalizację w ustawieniach telefonu.');
-      if (!(await Location.hasServicesEnabledAsync()))
-        throw new Error('Włącz lokalizację (GPS) w telefonie.');
+      // GPS failures are shown in the camera session, alongside the destination.
+      await Location.requestForegroundPermissionsAsync().catch(() => {});
       setAllowed(true);
     } catch (reason) {
       setError(

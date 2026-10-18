@@ -55,6 +55,8 @@ mock.module('expo-location', () => ({}));
 mock.module('expo-sensors', () => ({ Accelerometer: {}, Magnetometer: {} }));
 mock.module('@/src/VoiceAssistant', () => ({ VoiceAssistant: 'VoiceAssistant' }));
 const { CameraSession } = await import('@/src/CameraSession');
+const { waypointHud } = await import('@/src/positioning');
+const { TENDUR_KEBAB } = await import('@/src/banners');
 
 const childrenOf = (element) =>
   react.Children.toArray(element.props.children).filter(react.isValidElement);
@@ -176,6 +178,11 @@ function layout(notificationText, snapshot, width, height, status = null) {
     );
   }
   const result = {
+    glyph: nodes.find(
+      (record) =>
+        record.element.type === 'Text' && flatStyle(record.element.props.style).fontSize === 80,
+    )?.element.props.children,
+    text: textOf(tree),
     camera: rect(camera),
     ratio: camera.element.props.ratio,
     snapshotMode: nodes.find((record) => record.element.type === 'Image')?.element.props.resizeMode,
@@ -189,6 +196,44 @@ const scenarios = [
   ['long notification', 'Jadwigo, chcę Cię odwiedzić z Kajetanem. '.repeat(5)],
 ];
 const errors = [];
+const lastDirection = waypointHud(
+  { coordinate: { latitude: 52.23, longitude: 21.01 }, heading: 90, current: false },
+  TENDUR_KEBAB,
+  412,
+  700,
+);
+const ready = layout(null, false, 412, 892, {
+  panels: [{ ...lastDirection, stale: false }],
+  message: '',
+});
+for (const message of [
+  'Szukam sygnału GPS. Wyjdź na zewnątrz.',
+  'Trzymaj telefon spokojnie.',
+  'Nie działa kompas w telefonie. Spróbuj ponownie.',
+]) {
+  const waiting = layout(null, false, 412, 892, { panels: [lastDirection], message });
+  assert.equal(
+    waiting.glyph,
+    ready.glyph,
+    'Losing GPS or sensors must keep the last direction visible beside the status',
+  );
+  assert.ok(waiting.text.includes(message), 'The stale direction must retain its warning');
+  assert.ok(
+    !waiting.text.includes('Idź prosto'),
+    'Stale readings must not issue walking instructions',
+  );
+}
+const pending = waypointHud(
+  { coordinate: null, heading: null, current: false },
+  TENDUR_KEBAB,
+  412,
+  700,
+);
+assert.equal(
+  layout(null, false, 412, 892, { panels: [pending], message: 'Szukam sygnału GPS.' }).glyph,
+  '…',
+  'Before the first fix, show a waiting indicator without inventing a direction',
+);
 for (const [width, height] of [
   [412, 892],
   [360, 800],

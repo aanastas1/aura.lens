@@ -29,6 +29,22 @@ const walking: WalkingRoute = {
   warnings: ['Zachowaj ostrożność.'],
 };
 const signal = () => new AbortController().signal;
+
+it('reports Warsaw local time in winter and summer regardless of device time zone', () => {
+  for (const [utc, hour] of [
+    ['2026-01-15T08:00:00Z', 9],
+    ['2026-07-15T08:00:00Z', 10],
+  ] as const) {
+    const navigation = createNavigation(
+      { search: async () => [], route: async () => walking },
+      () => Date.parse(utc),
+    );
+    const state = navigation.context();
+    assert.equal(state.timeZone, 'Europe/Warsaw');
+    assert.match(state.localTime, new RegExp(`\\b0?${hour}:00:00\\b`));
+  }
+});
+
 function setup() {
   let clock = 1000000;
   let searchCalls = 0,

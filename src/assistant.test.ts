@@ -156,6 +156,59 @@ const ask = (
   signal = new AbortController().signal,
 ) => conversation.answerWithPhoto(text, image, 'test-key', signal, () => {}, fetcher);
 
+describe('location and time with every question', () => {
+  it('sends the latest GPS, its validity and Warsaw time on consecutive photo and SOS turns', async () => {
+    const conversation = createAssistantConversation();
+    const states: any[] = [];
+    const fetcher: typeof fetch = async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      const content = request.messages.find((message: any) => message.role === 'system').content;
+      const system =
+        typeof content === 'string' ? content : content.map((part: any) => part.text).join('');
+      states.push(JSON.parse(system.match(/<stan_aplikacji>\n(.*)\n<\/stan_aplikacji>/s)[1]));
+      return completed('Widzę pomnik.');
+    };
+    await ask(conversation, 'Co to za pomnik?', fetcher);
+    const fix = { latitude: 52.24, longitude: 21.01, accuracy: 5, timestamp: Date.now() };
+    conversation.navigation.updateLocation(fix);
+    await ask(conversation, 'A teraz?', fetcher);
+    const staleFix = { ...fix, timestamp: fix.timestamp + 1, accuracy: 500 };
+    conversation.navigation.updateLocation(staleFix);
+    await conversation.answerForHelp(
+      'Gdzie jestem?',
+      'test-key',
+      new AbortController().signal,
+      () => {},
+      fetcher,
+    );
+    assert.equal(states[0].location, null);
+    assert.equal(states[0].locationCurrent, false);
+    assert.deepEqual(states[1].location, fix);
+    assert.equal(states[1].locationCurrent, true);
+    assert.deepEqual(states[2].location, staleFix);
+    assert.equal(states[2].locationCurrent, false);
+    for (const state of states) {
+      assert.equal(state.timeZone, 'Europe/Warsaw');
+      assert.ok(Number.isFinite(Date.parse(state.currentTime)));
+      assert.ok(state.localTime);
+    }
+  });
+
+  it('instructs the model to combine the photo with GPS and time, retaining the photo for landmark searches', async () => {
+    const fetcher: typeof fetch = async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      const content = request.messages.find((message: any) => message.role === 'system').content;
+      const system =
+        typeof content === 'string' ? content : content.map((part: any) => part.text).join('');
+      assert.match(system, /<miejsce_i_czas>/);
+      assert.match(system, /Ciemny kadr nie oznacza nocy/);
+      assert.match(system, /Przy rozpoznawaniu obiektu nie wywołuj drop_photo/);
+      return completed('Widzę pomnik.');
+    };
+    await ask(createAssistantConversation(), 'Co to za pomnik?', fetcher);
+  });
+});
+
 describe('continuous conversation', () => {
   it('remembers text across questions but sends only the current photo and one system message', async () => {
     const conversation = createAssistantConversation();

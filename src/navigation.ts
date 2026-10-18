@@ -144,8 +144,8 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
     const route = selected();
     return {
       currentTime: new Date(now()).toISOString(),
-      localTime: new Date(now()).toLocaleString('pl-PL'),
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      localTime: new Date(now()).toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' }),
+      timeZone: 'Europe/Warsaw',
       rearCameraHeading: heading && now() - heading.timestamp <= 2000 ? heading.degrees : null,
       location: fix,
       locationCurrent: fresh(),
