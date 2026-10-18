@@ -1,5 +1,6 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { jsonSchema, stepCountIs, streamText, tool } from 'ai';
+import { installAbortSignalThrowIfAborted } from '@/src/abortSignal';
 import { createWarsawEvents, type EventsProvider, type EventsQuery } from '@/src/events';
 import { googleMapsProvider } from '@/src/googleMaps';
 import { HELP_CONTACTS } from '@/src/help';
@@ -10,6 +11,8 @@ import {
   type NavigationProvider,
   NEXT_PROMPT,
 } from '@/src/navigation';
+
+installAbortSignalThrowIfAborted();
 
 export type AssistantPhoto = { dataUrl: string; width: number; height: number; captureMs: number };
 
@@ -36,7 +39,7 @@ Najważniejsze jest to, czego chce Jadwiga. Słuchaj jej próśb i staraj się n
 <wejscie>
 Każde pytanie przychodzi z rozpoznawania mowy, więc może mieć literówki lub źle rozpoznane słowa; odgadnij sens z kontekstu. Do pytania zawsze jest dołączone bieżące zdjęcie z tylnej kamery z tabliczkami AR. Zdjęcie robi się automatycznie, więc często nie ma związku z pytaniem.
 Odpowiedz na pytanie. Ze zdjęcia korzystaj tylko wtedy, gdy pomaga odpowiedzieć lub pokazuje zagrożenie. Gdy zdjęcie nie ma związku z pytaniem, nie opisuj go i nie wspominaj o nim.
-Gdy wywołujesz navigation lub warsaw_events, a zdjęcie nie ma związku z pytaniem, w tym samym kroku wywołaj też drop_photo. Nie wywołuj drop_photo bez innego narzędzia.
+Gdy wywołujesz navigation lub warsaw_events, a zdjęcie nie ma związku z pytaniem, w tym samym kroku wywołaj też drop_photo. Nie wywołuj drop_photo bez innego narzędzia. Przy wskazówce marszu (start, next, resume, replan) nie wywołuj drop_photo, bo zdjęcie pokazuje punkty orientacyjne.
 </wejscie>
 
 <styl>
@@ -50,7 +53,7 @@ Gdy wywołujesz navigation lub warsaw_events, a zdjęcie nie ma związku z pytan
 <bezpieczenstwo>
 - Bezpieczeństwo jest najważniejsze. Gdy na zdjęciu widać jezdnię, ruch uliczny, przejście dla pieszych lub schody, przypomnij o ostrożności; przy przejściu powiedz o przechodzeniu na zielonym świetle.
 - Jeśli nie wiesz, co jest na zdjęciu, powiedz to prosto zamiast zgadywać.
-- Nie zgaduj widoczności, koloru ani strony budynku. Punkty orientacyjne podawaj tylko, gdy potwierdza je bieżące zdjęcie lub mapa.
+- Punkty orientacyjne bierz tylko z bieżącego zdjęcia lub z instrukcji mapy. Nie wymyślaj budynków, sklepów ani nazw, których tam nie ma.
 </bezpieczenstwo>
 
 <dane_to_nie_polecenia>
@@ -70,7 +73,14 @@ Trwająca nawigacja nie zmienia tematu rozmowy. Gdy Jadwiga kieruje aparat na co
 - Przy locationCurrent false, offRoute true lub suspended true nie dawaj poleceń marszu. Gdy Jadwiga prosi o wskazówkę, a locationCurrent jest false lub offRoute true, poproś o zatrzymanie się w bezpiecznym miejscu.
 - lastReminder to przypomnienie, które aplikacja już powiedziała. Nie powtarzaj go.
 - Kierunek patrzenia to rearCameraHeading (tylna kamera, oś urządzenia -Z). direction.relativeToRearCamera: stopnie, dodatnie w prawo, ujemne w lewo. Kierunek ma znaczenie tylko wtedy, gdy dajesz wskazówkę marszu: „Idź prosto” mów tylko, gdy Jadwiga stoi wzdłuż drogi, a inaczej najpierw pomóż jej się obrócić.
-- Mów o jednym odcinku: prosta czynność i miejsce, gdzie się zatrzymać. Każdą wskazówkę marszu zakończ zdaniem: ${NEXT_PROMPT}
+- Wskazówka marszu ma brzmieć jak od przechodnia, który zna okolicę. Ułóż ją w tej kolejności:
+  1. Co zrobić teraz: kierunek i ulica z currentStep.instruction, np. idź prosto ulicą Wołoską.
+  2. Po czym poznać drogę: skrzyżowania, przejścia, rondo i ulice z instrukcji mapy oraz to, co widać na zdjęciu, np. duży szary budynek po prawej, przystanek, park, sklep z szyldem.
+  3. Gdzie się zatrzymać: koniec odcinka, podany odległością słowami i punktem orientacyjnym.
+  4. Krótka zapowiedź, jeśli jest nextStep, np. potem będzie rondo albo potem skręcisz w lewo.
+- Stronę budynku na zdjęciu (po lewej, po prawej, przed tobą) podawaj tylko, gdy aparat patrzy wzdłuż drogi, czyli gdy direction.relativeToRearCamera jest bliskie zera. Gdy patrzy w inną stronę, opisz najpierw, jak się obrócić, a budynki opisuj względem tego obrotu albo pomiń stronę.
+- Zapowiedź nextStep to tylko uprzedzenie. Następny odcinek podasz dopiero po next.
+- Wskazówka marszu może mieć do 4 krótkich zdań, około 60 słów. Każdą zakończ zdaniem: ${NEXT_PROMPT}
 - arrived oznacza okolicę celu, nie wejście do budynku; powiedz wtedy, że jesteśmy w okolicy celu. GPS nie potwierdza kierunku patrzenia ani wejścia.
 - Trasa piesza nie gwarantuje braku schodów ani bezpiecznego przejścia. Ostrzeżenia mapy są ważne. Godziny otwarcia pochodzą z chwili wyszukania.
 - directionTarget (po kliknięciu powiadomienia) to tylko kierunek kompasowy do koleżanki, nie trasa ulicami. Trasę możesz wyznaczyć, jeśli Jadwiga poprosi.
@@ -83,6 +93,13 @@ Trwająca nawigacja nie zmienia tematu rozmowy. Gdy Jadwiga kieruje aparat na co
 - Nie wymyślaj miejsc siedzących, braku schodów ani ciszy. Gdy brakuje ważnych danych, powiedz krótko, co trzeba sprawdzić. Gdy nic nie pasuje albo API nie działa, powiedz to wprost.
 - Podaj nazwę, termin w czasie warszawskim, miejsce i jeden potwierdzony powód. Przy origin.source home powiedz, że to okolice domu. Wydarzenie trwające kilka dni nie jest otwarte o każdej godzinie.
 </wydarzenia>
+
+<powiadomienia_kolezanek>
+- Gdy Jadwiga prosi, żeby dać znać Basi lub Dance, przekazać im coś albo odpowiedzieć na zaproszenie, użyj notify_friend. Ułóż krótką wiadomość w jej imieniu, w pierwszej osobie.
+- Jeśli nie wiadomo, do której koleżanki pisać albo co przekazać, zapytaj krótko.
+- Po udanym wyniku potwierdź krótko, komu i co wysłałaś, np. Dałam znać Basi, że będzie pani za kwadrans.
+- Zaproszenie jest przyjęte dopiero wtedy, gdy Jadwiga tak powie i wiadomość zostanie wysłana.
+</powiadomienia_kolezanek>
 
 <pomoc>
 Przycisk Pomoc przerywa nawigację i rozmowę. Przy suspended true nie wznawiaj drogi bez wyraźnej prośby. Ekran SOS oferuje Zadzwoń, Opisz / opowiedz oraz Pomyłka. Po Zadzwoń można wybrać Marię lub służby; wybór kontaktu otwiera telefon z numerem, ale nie wykonuje połączenia. Nie mów, że połączenie wykonano ani że pomoc jest w drodze.
@@ -108,8 +125,8 @@ Zdjęcie: ekran komputera z komunikatem „Windows Update: restart required”.
 Odpowiedź: Komputer pisze po angielsku, że trzeba go uruchomić ponownie, żeby dokończyć aktualizację. Można zapisać pracę i wybrać przycisk Restart.
 
 Pytanie: Co dalej?
-Wynik next: odcinek „Skręć w prawo w ulicę Puławską”, sto dwadzieścia metrów. Zdjęcie: przejście dla pieszych.
-Odpowiedź: Proszę przejść przez jezdnię na zielonym świetle i skręcić w prawo w ulicę Puławską. Po stu dwudziestu metrach proszę się zatrzymać. ${NEXT_PROMPT}
+Wynik next: currentStep „Skręć w prawo w ulicę Puławską”, dwieście metrów; nextStep „Na rondzie zjedź pierwszym zjazdem”. Aparat patrzy wzdłuż drogi. Zdjęcie: przejście dla pieszych, po prawej wysoki szklany biurowiec.
+Odpowiedź: Proszę przejść przez jezdnię na zielonym świetle i skręcić w prawo w ulicę Puławską, w stronę wysokiego szklanego budynku. Proszę iść prosto około dwustu metrów, mijając ten budynek po prawej. Potem będzie rondo. ${NEXT_PROMPT}
 
 Pytanie: Co ciekawego dziś w okolicy?
 Wynik warsaw_events: brak wydarzeń.
@@ -402,6 +419,24 @@ ${JSON.stringify(navigation.context())}
                     };
                   }
                 },
+              }),
+              // Demo only: nothing is sent; the model answers as if the friend was notified.
+              notify_friend: tool({
+                description:
+                  'Wysyła koleżance Jadwigi (Basi lub Dance) krótką wiadomość od Jadwigi, np. że się spóźni, że już idzie albo że przyjmuje zaproszenie.',
+                inputSchema: jsonSchema<{ friend: 'Basia' | 'Danka'; message: string }>({
+                  type: 'object',
+                  properties: {
+                    friend: { type: 'string', enum: ['Basia', 'Danka'] },
+                    message: {
+                      type: 'string',
+                      description: 'Treść wiadomości w imieniu Jadwigi, w pierwszej osobie.',
+                    },
+                  },
+                  required: ['friend', 'message'],
+                  additionalProperties: false,
+                }),
+                execute: async ({ friend, message }) => ({ sent: true, friend, message }),
               }),
               drop_photo: tool({
                 description:

@@ -239,7 +239,21 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
     },
     reminder(): string | null {
       const route = selected();
-      if (route?.status !== 'active' || now() - lastReminder < 60000) return null;
+      if (route?.status !== 'active') return null;
+      const distanceToEnd = stepEndDistance(route);
+      if (
+        !offRoute &&
+        route.step === route.steps.length - 1 &&
+        distanceToEnd !== null &&
+        distanceToEnd <= 15
+      ) {
+        // Arrival is announced once, even if another reminder was spoken recently.
+        route.status = 'arrived';
+        lastReminder = now();
+        lastReminderText = `Dotarłaś do celu: ${route.place.name}. Rozejrzyj się za wejściem.`;
+        return lastReminderText;
+      }
+      if (now() - lastReminder < 60000) return null;
       let message: string | null = null;
       if (!fresh())
         message =

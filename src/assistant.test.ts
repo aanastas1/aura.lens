@@ -466,6 +466,47 @@ describe('unrelated photo', () => {
   });
 });
 
+describe('friend notifications', () => {
+  it('confirms a message to a friend without any request outside OpenRouter', async () => {
+    const requests: any[] = [];
+    const fetcher: typeof fetch = async (url, init) => {
+      assert.match(String(url), /openrouter/);
+      requests.push(JSON.parse(String(init?.body)));
+      return requests.length === 1
+        ? new Response(
+            sse(
+              chunk({
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call-0',
+                    type: 'function',
+                    function: {
+                      name: 'notify_friend',
+                      arguments: JSON.stringify({ friend: 'Basia', message: 'Spóźnię się.' }),
+                    },
+                  },
+                ],
+              }),
+            ) +
+              sse(chunk({}, 'tool_calls')) +
+              'data: [DONE]\n\n',
+            { headers: { 'content-type': 'text/event-stream' } },
+          )
+        : completed('Dałam znać Basi.');
+    };
+    const answer = await ask(createAssistantConversation(), 'Napisz Basi, że się spóźnię', fetcher);
+    assert.equal(answer, 'Dałam znać Basi.');
+    assert.ok(requests[0].tools.some((tool: any) => tool.function.name === 'notify_friend'));
+    const result = requests[1].messages.find((message: any) => message.role === 'tool');
+    assert.deepEqual(JSON.parse(result.content), {
+      sent: true,
+      friend: 'Basia',
+      message: 'Spóźnię się.',
+    });
+  });
+});
+
 describe('Google Maps isolation from everyday conversation', () => {
   it('never calls Google Maps for ordinary conversation or history compression', async () => {
     const { googleMapsProvider } = await import('@/src/googleMaps');

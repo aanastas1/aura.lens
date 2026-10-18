@@ -93,6 +93,69 @@ describe('remembered conversational walking route', () => {
     assert.equal(s.navigation.reminder(), null);
   });
 
+  it('announces arrival once on the final step without another question or reminder delay', async () => {
+    const s = setup();
+    await s.start();
+    s.locate(100);
+    assert.match(s.navigation.reminder()!, /Co dalej/);
+    await s.navigation.execute({ action: 'next' }, signal());
+    s.locate(199);
+    assert.equal(s.navigation.reminder(), 'Dotarłaś do celu: Apteka. Rozejrzyj się za wejściem.');
+    assert.equal(s.navigation.context().currentRoute!.status, 'arrived');
+    assert.match(s.navigation.displayStatus(), /Jesteś w okolicy/);
+    assert.equal(s.navigation.reminder(), null);
+    s.advance(120000);
+    s.locate(200);
+    assert.equal(s.navigation.reminder(), null, 'no further walking or wellbeing prompts');
+  });
+
+  it('requires the final step and fresh accurate GPS within fifteen metres for automatic arrival', async () => {
+    const s = setup();
+    await s.start();
+    s.locate(200);
+    s.navigation.reminder();
+    assert.equal(
+      s.navigation.context().currentRoute!.status,
+      'active',
+      'does not skip intermediate steps',
+    );
+    s.locate(100);
+    await s.navigation.execute({ action: 'next' }, signal());
+    s.locate(184);
+    s.navigation.reminder();
+    assert.equal(s.navigation.context().currentRoute!.status, 'active');
+    s.locate(199, 0, 100);
+    s.navigation.reminder();
+    assert.equal(
+      s.navigation.context().currentRoute!.status,
+      'active',
+      'poor accuracy cannot finish a route',
+    );
+    s.locate(199);
+    s.advance(6000);
+    s.navigation.reminder();
+    assert.equal(
+      s.navigation.context().currentRoute!.status,
+      'active',
+      'stale GPS cannot finish a route',
+    );
+    s.locate(199);
+    assert.match(s.navigation.reminder()!, /Dotarłaś do celu/);
+  });
+
+  it('does not announce arrival while the route is paused or SOS has stopped navigation', async () => {
+    const s = setup();
+    await s.start();
+    s.locate(100);
+    await s.navigation.execute({ action: 'next' }, signal());
+    await s.navigation.execute({ action: 'pause' }, signal());
+    s.locate(199);
+    assert.equal(s.navigation.reminder(), null);
+    assert.equal(s.navigation.context().currentRoute!.status, 'paused');
+    s.navigation.stopAll();
+    assert.equal(s.navigation.reminder(), null);
+  });
+
   it('preserves the first destination when another route is chosen and can return to it', async () => {
     const s = setup();
     const first = await s.start();
