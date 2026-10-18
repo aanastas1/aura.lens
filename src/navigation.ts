@@ -224,10 +224,7 @@ export function createNavigation(provider: NavigationProvider, now = Date.now) {
       if (!route) return '';
       if (route.status === 'paused') return `Droga do: ${route.place.name}. Wstrzymana.`;
       if (route.status === 'arrived') return `Jesteś w okolicy: ${route.place.name}.`;
-      if (!fresh())
-        return fix && usableFix(fix, now())
-          ? `Cel: ${route.place.name}. Lokalizacja przybliżona (±${Math.round(fix.accuracy!)} m).`
-          : 'Czekam na dokładny GPS. Zatrzymaj się w bezpiecznym miejscu.';
+      if (!fresh()) return `Cel: ${route.place.name}.`;
       if (offRoute) return 'Sprawdźmy drogę. Zatrzymaj się w bezpiecznym miejscu.';
       return `Cel: ${route.place.name}. Powiedz: „Co dalej?”`;
     },

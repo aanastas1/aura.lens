@@ -357,10 +357,10 @@ for (const hasPreviousFix of [true, false]) {
   );
   assert.equal(renderedDisplay.panels[0].stale, true);
   assert.equal(renderedDisplay.panels[0].pending, !hasPreviousFix);
-  assert.match(
+  assert.equal(
     renderedDisplay.message,
-    /GPS|przybliżona/,
-    'Stale route directions must report their location quality',
+    'Cel: Cefarm.',
+    'Keep the destination without location quality warnings',
   );
 }
 navigationClock += 1000;
@@ -377,7 +377,7 @@ assert.equal(
   'Coarse location must orient a real arrow even before the first precise fix',
 );
 assert.ok(Math.abs(renderedDisplay.panels[0].relativeBearing) < 1);
-assert.match(renderedDisplay.message, /przybliżona/);
+assert.equal(renderedDisplay.message, 'Cel: Cefarm.');
 navigation.stopAll();
 sessionEffects = [];
 layout(null, false, 412, 892);

@@ -325,15 +325,13 @@ export function CameraSession({ restart }: { restart: () => void }) {
         else if (!sensorsReady) message = 'Szukam kierunku. Trzymaj telefon przed sobą.';
         else if (!basis) message = 'Trzymaj telefon spokojnie.';
         const navigationState = conversation.navigation.hudState();
+        const target = navigationState.directionTarget ?? DEFAULT_TARGET;
         const hudCoordinate = gpsReady
           ? coordinate
           : (navigationState.approximateLocation ?? coordinate);
         if (!message && !gpsReady) {
-          message = navigationState.approximateLocation
-            ? `Lokalizacja przybliżona (±${Math.round(navigationState.approximateLocation.accuracy!)} m).`
-            : gpsError || 'Szukam sygnału GPS. Wyjdź na zewnątrz.';
+          message = hudCoordinate ? `Cel: ${target.name}.` : 'Szukam kierunku.';
         }
-        const target = navigationState.directionTarget ?? DEFAULT_TARGET;
         const followingRoute = navigationState.followingRoute;
         const projected = navigationState.suspended
           ? null

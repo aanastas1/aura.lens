@@ -87,7 +87,7 @@ describe('remembered conversational walking route', () => {
     assert.equal(state.currentRoute!.destination.id, place.id);
     assert.equal(state.locationCurrent, false);
     assert.equal(s.navigation.hudState().directionTarget!.id, place.id);
-    assert.match(s.navigation.displayStatus(), /przybliżona/);
+    assert.equal(s.navigation.displayStatus(), `Cel: ${place.name}.`);
     assert.equal(
       s.navigation.reminder(),
       null,
