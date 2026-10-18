@@ -86,10 +86,10 @@ export function CameraSession({ restart }: { restart: () => void }) {
   const [registerHeaderTap] = useState(createTripleTap);
   const [invitation, setInvitation] = useState<Invitation | null>(null);
   const [pendingAnnouncements, setPendingAnnouncements] = useState<Invitation[]>([]);
-  const finishAnnouncement = useCallback(
-    () => setPendingAnnouncements((pending) => pending.slice(1)),
-    [],
-  );
+  const finishAnnouncement = useCallback((read: Invitation, completed: boolean) => {
+    setPendingAnnouncements((pending) => pending.filter((item) => item !== read));
+    if (completed) setInvitation((current) => (current === read ? null : current));
+  }, []);
   const showInvitation = () => {
     if (!registerHeaderTap(performance.now())) return;
     const next = randomInvitation();

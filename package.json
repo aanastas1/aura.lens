@@ -4,8 +4,8 @@
   "private": true,
   "main": "index.ts",
   "scripts": {
-    "start": "expo start --dev-client",
-    "android": "expo start --dev-client --android",
+    "start": "expo start --dev-client --localhost",
+    "android": "expo start --dev-client --localhost --android",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "format": "biome check --write .",

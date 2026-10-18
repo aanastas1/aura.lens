@@ -64,8 +64,11 @@ Aplikacja na Androida (Google Pixel 6a) w Expo i React Native. Asystent działa 
 ```sh
 bun install
 cp .env.example .env   # wpisz klucze API
+adb -d reverse tcp:8081 tcp:8081
 bun run start
 ```
+
+Metro uruchamia się tylko lokalnie (`127.0.0.1:8081`). Telefon łączy się z nim przez USB za pomocą `adb reverse`; po ponownym podłączeniu kabla powtórz polecenie powyżej.
 
 Zmienne w `.env`:
 

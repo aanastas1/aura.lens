@@ -50,7 +50,7 @@ export function VoiceAssistant({
   capturePhoto: () => Promise<AssistantPhoto>;
   conversation: AssistantConversation;
   announcement: Invitation | null;
-  onAnnouncementRead: () => void;
+  onAnnouncementRead: (announcement: Invitation, completed: boolean) => void;
 }) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [transcript, setTranscript] = useState('');
@@ -152,7 +152,11 @@ export function VoiceAssistant({
         language: 'pl-PL',
         rate: 0.85,
         onDone: () => {
-          if (!s.disposed) transition('idle');
+          if (s.disposed) return;
+          setAnswer('');
+          setTranscript('');
+          setMapSources([]);
+          transition('idle');
         },
         onStopped: () => {
           if (!s.disposed) transition('idle');
@@ -237,20 +241,20 @@ export function VoiceAssistant({
     // The queue lives beside the notification card, so closing it never skips the reading.
     if (!announcement || s.disposed || s.phase !== 'idle') return;
     transition('announcing');
-    const finishReading = () => {
+    const finishReading = (completed: boolean) => {
       if (s.disposed) return;
-      onAnnouncementRead();
+      onAnnouncementRead(announcement, completed);
       transition('idle');
     };
     Speech.speak(announcement.text, {
       language: 'pl-PL',
       rate: 0.85,
-      onDone: finishReading,
-      onStopped: finishReading,
+      onDone: () => finishReading(true),
+      onStopped: () => finishReading(false),
       onError: () => {
         if (s.disposed) return;
         setError('Nie mogę przeczytać powiadomienia na głos. Jego treść znajdziesz na ekranie.');
-        finishReading();
+        finishReading(false);
       },
     });
   }, [announcement, phase, onAnnouncementRead]);
@@ -270,7 +274,11 @@ export function VoiceAssistant({
         language: 'pl-PL',
         rate: 0.85,
         onDone: () => {
-          if (!s.disposed) transition('idle');
+          if (s.disposed) return;
+          setAnswer('');
+          setTranscript('');
+          setMapSources([]);
+          transition('idle');
         },
         onStopped: () => {
           if (!s.disposed) transition('idle');
