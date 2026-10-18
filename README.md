@@ -10,6 +10,27 @@ Nawigator pieszy dla osób starszych. Patrzysz przez aparat telefonu, a aplikacj
 
 Projekt powstał na [Warsaw Open Data Hackathon 2026](https://um.warszawa.pl/-/warsaw-open-data-hackathon-2026) (17–18 października 2026, 42 Warsaw, projekt finansowany przez m.st. Warszawa). Korzysta z otwartych danych miasta: [Kalendarza wydarzeń m.st. Warszawy](https://dane.um.warszawa.pl/pl/catalogue/ba202e4b-dfa9-440c-83c0-0b3517520cb8).
 
+## Prezentacja i demo
+
+- [Otwórz prezentację w Google Slides](https://docs.google.com/presentation/d/1aJ_8T800zQi3KvZRQVB4hIRO_-yCHA5Kunre5wzkCOc/edit)
+- [Pobierz prezentację PowerPoint z animacjami](docs/presentation/ProwadzMnie.pptx)
+
+### Prowadzenie w AR
+
+<p align="center">
+  <img src="docs/presentation/navigation.gif" alt="Demo głosowej nawigacji pieszej ProwadźMnie" width="360">
+</p>
+
+### Scenariusz prezentacji
+
+| Problem | Użytkownik i droga |
+| --- | --- |
+| <img src="docs/presentation/problem.gif" alt="Seniorka, która chce wyjść z domu" width="420"> | <img src="docs/presentation/user-case.gif" alt="Wskazówki AR na drodze" width="420"> |
+
+| Dane miejskie | Kierunek rozwoju |
+| --- | --- |
+| <img src="docs/presentation/city-data.gif" alt="Kalendarz wydarzeń Warszawy w aplikacji" width="280"> | <img src="docs/presentation/future.gif" alt="Kierunek rozwoju: okulary rozszerzonej rzeczywistości" width="420"> |
+
 ## Co robi
 
 - Pokazuje na obrazie z aparatu duży znak celu, odległość i strzałkę: „Idź prosto”, „Skręć w prawo”, „Odwróć się”.
